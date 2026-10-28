@@ -1,3 +1,4 @@
+#include "audio/audio_output.hpp"
 #include "inspect.hpp"
 #include "metadata/cddb_provider.hpp"
 #include "metadata/metadata_matcher.hpp"
@@ -286,6 +287,7 @@ void print_usage(const char* prog) {
               << "  Options:\n"
               << "      --cddb-url <url>                                 Override CDDB CGI endpoint URL\n"
               << "      --sidecar <path>                                 Override sidecar metadata file path\n"
+              << "      --test-tone [seconds]                            Play 440 Hz PCM test signal via AudioOutput\n"
               << "      --verify-deps                                    Run Phase 1 dependency verification\n";
 }
 
@@ -303,6 +305,8 @@ int main(int argc, char* argv[]) {
 
     std::vector<SourceSpec> specs;
     bool verify_deps = false;
+    bool run_test_tone = false;
+    double test_tone_seconds = 1.0;
     bool interactive_mode = false;
     bool auto_save_lookup = false;
     mycds::CddbClientConfig cddb_config{};
@@ -338,6 +342,16 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "--verify-deps") {
             verify_deps = true;
+        } else if (arg == "--test-tone") {
+            run_test_tone = true;
+            if (i + 1 < argc && std::string_view(argv[i + 1]).rfind("--", 0) != 0) {
+                try {
+                    test_tone_seconds = std::stod(argv[++i]);
+                } catch (...) {
+                    std::cerr << "Invalid duration for --test-tone\n";
+                    return 1;
+                }
+            }
         } else if (arg == "--help" || arg == "-h") {
             print_usage(argv[0]);
             return 0;
@@ -350,6 +364,20 @@ int main(int argc, char* argv[]) {
 
     if (verify_deps) {
         return run_phase1_verification();
+    }
+
+    if (run_test_tone) {
+        std::cout << "[AudioOutput] Playing 440 Hz sine wave test signal for "
+                  << test_tone_seconds << "s (44.1 kHz, 16-bit S16LE stereo)...\n";
+        std::string err;
+        if (!mycds::play_test_tone(440.0, test_tone_seconds, "", err)) {
+            std::cerr << "AudioOutput test tone failed: " << err << "\n";
+            return 1;
+        }
+        std::cout << "[AudioOutput] Test tone playback completed successfully.\n";
+        if (specs.empty()) {
+            return 0;
+        }
     }
 
     if (specs.empty()) {
