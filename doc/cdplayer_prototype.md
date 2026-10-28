@@ -589,6 +589,232 @@ Deliverable: two source-inspection commands with consistent output.
 
 **Exit criterion:** the physical disc and its image expose a consistent logical layout for the reference disc.
 
+## Phase 2.1 — CUE Sheet Support
+
+### Objective
+
+Extend the existing disc-source abstraction to support CUE sheets as an alternative description format for disc images. The implementation must preserve track boundaries and available index information while reusing the existing playback pipeline.
+
+### Scope
+
+- Support loading a CUE sheet that references a binary image file (`FILE ... BINARY`).
+- Parse album-level and track-level metadata, including:
+  - `TITLE`
+  - `PERFORMER`
+  - `SONGWRITER`
+  - `CATALOG`
+  - `ISRC`
+  - `INDEX`
+  - `PREGAP` and `POSTGAP`, where applicable.
+- Support multiple tracks referencing the same binary image.
+- Resolve image paths relative to the CUE file's location.
+- Handle quoted strings, whitespace, character encoding, and malformed input.
+- Distinguish audio tracks from data tracks.
+- Preserve track and index positions using absolute sector addresses internally.
+- Keep the existing TOC-based image-loading implementation operational.
+
+### Design
+
+Introduce a format-independent metadata model:
+
+- `DiscMetadata`
+  - Album title
+  - Album performer
+  - Catalog number
+  - Optional genre, release year, and external database identifiers
+- `TrackMetadata`
+  - Track number
+  - Title
+  - Performer
+  - Songwriter
+  - ISRC
+- `DiscLayout`
+  - Track boundaries
+  - Index positions
+  - Track types
+  - Pregap and postgap information, where represented by the source format
+
+Keep metadata separate from physical layout and audio-sector access. The same logical model should be populated by both CUE and TOC parsers.
+
+Add a `CueImageSource` implementation, or extend the existing image-source factory to select the appropriate parser based on the input file. The resulting source must implement the same interface used by the physical-CD and TOC-image sources.
+
+Use a documented internal convention for sector ranges, preferably half-open intervals `[startLba, endLba)`. Convert CUE timestamps into sector addresses without rounding through floating-point seconds.
+
+### Important Constraints
+
+- A CUE sheet describes a layout; it does not contain the audio data itself.
+- Do not assume that every CUE sheet references a single BIN file or uses only the `BINARY` file type.
+- For the initial implementation, explicitly document the supported subset. Unsupported file types or layout constructs must produce clear errors rather than silently incorrect playback.
+- Preserve `INDEX 00` and `INDEX 01` as distinct positions. Do not automatically interpret every pregap as silence or discard audio stored before `INDEX 01`.
+- Do not infer missing metadata from filenames unless this is implemented as an explicitly documented fallback.
+- Do not overwrite source CUE files when updating metadata.
+
+### Implementation Tasks
+
+1. Define the shared metadata and disc-layout structures.
+2. Implement a CUE parser with validation and useful error messages.
+3. Resolve referenced image files and validate track offsets against image size.
+4. Implement CUE-backed sector reads using the existing audio-source interface.
+5. Integrate CUE loading into the CLI.
+6. Add commands or output fields to display album and track metadata.
+7. Add unit tests for parsing, timestamps, indexes, multiple tracks, missing files, malformed input, and unsupported constructs.
+8. Verify that playback and seeking work identically across supported TOC and CUE images.
+
+### CLI Examples
+
+```bash
+cdplayer --image ~/CDImages/album.cue
+cdplayer --image ~/CDImages/album.toc
+```
+
+The `info` and `tracks` commands should display available metadata regardless of the source format.
+
+### Acceptance Criteria
+
+- A supported BIN/CUE image loads through the common disc-source interface.
+- Track boundaries and index positions match the CUE description.
+- Track seeking and playback work without changing the playback controller.
+- Existing physical-CD and TOC-image functionality remains intact.
+- Invalid or unsupported CUE constructs produce actionable errors.
+- Automated tests cover the supported CUE subset.
+
+
+## Phase 2.2 — CDDB-Compatible Metadata Lookup
+
+### Objective
+
+Retrieve album and track metadata from a CDDB-compatible online database when importing a physical CD or an image. Allow the user to select among multiple matches, review the returned information, and persist the selected metadata locally.
+
+### Scope
+
+- Calculate the disc identifier required by the selected database protocol.
+- Query a configurable CDDB-compatible service.
+- Support multiple search matches.
+- Retrieve full metadata for a selected match.
+- Map remote metadata into the shared `DiscMetadata` and `TrackMetadata` model.
+- Save metadata to a local sidecar file and, where appropriate, export it to CUE.
+- Work without network access when metadata is already available locally.
+- Keep playback independent of network requests.
+
+### Architecture
+
+Introduce a metadata lookup layer separate from disc reading and playback:
+
+- `MetadataProvider`
+  - Abstract interface for searching and retrieving metadata.
+- `CddbCompatibleProvider`
+  - Implements the selected CDDB-compatible protocol.
+- `MetadataMatcher`
+  - Compares returned entries with the locally detected disc layout.
+- `MetadataStore`
+  - Loads and saves persistent metadata associated with an imported disc.
+
+The metadata provider must not be responsible for reading audio sectors or controlling playback.
+
+### Lookup Workflow
+
+1. Read the disc layout from the physical CD or image.
+2. Compute the identifier required by the selected metadata service.
+3. Submit a lookup request.
+4. Parse zero, one, or multiple matching entries.
+5. If several matches are returned, let the user choose one.
+6. Retrieve the complete metadata for the selected entry.
+7. Validate the result against the local disc layout.
+8. Present the metadata for review before saving it.
+9. Save the selected metadata locally and optionally export it to CUE.
+
+If no match is found, the disc must remain usable. The user must be able to enter metadata manually or import it later.
+
+### Matching and Validation
+
+Do not treat a CDDB disc identifier as a globally unique identifier for an album or physical release.
+
+Validate at least:
+
+- Track count
+- Track ordering
+- Disc length and track offsets, where the service provides comparable information
+- Availability and consistency of track titles
+
+A match is a candidate, not proof that the metadata describes the exact pressing or mastering of the disc.
+
+Preserve the locally detected disc layout as the authoritative source for playback. Remote metadata must never silently modify track boundaries, index positions, or audio-sector offsets.
+
+### Metadata Persistence
+
+Use a sidecar metadata file as the application's canonical editable metadata store. It should be associated with the disc image or a stable internal disc-record identifier.
+
+Persist, where available:
+
+- Album title and performer
+- Track titles and performers
+- Genre and release year
+- Catalog number and ISRC values
+- Metadata provider name
+- External database record identifier
+- Lookup timestamp
+- User corrections
+
+Keep the original source layout separate from downloaded metadata. Exporting to CUE should update metadata fields without changing track offsets or other layout directives.
+
+If CUE cannot represent a metadata field consistently, retain that field in the sidecar file rather than relying on non-standard `REM` directives.
+
+### Network and Error Handling
+
+- Set explicit connection and response timeouts.
+- Handle DNS failures, unavailable services, HTTP or protocol errors, malformed responses, and rate limits.
+- Do not block the audio thread or playback controller while performing a lookup.
+- Avoid automatic repeated requests when the service is unavailable.
+- Make the provider endpoint configurable.
+- Keep the parser and matching logic testable without live network access.
+
+Use recorded or synthetic protocol responses for deterministic unit tests. Keep live-service integration tests separate from the normal test suite.
+
+### CLI Examples
+
+```bash
+cdplayer --device /dev/sr1
+```
+
+Add commands such as:
+
+```text
+metadata lookup
+metadata show
+metadata edit
+metadata save
+metadata export-cue
+```
+
+The exact command names may be adjusted to fit the existing CLI design.
+
+For image imports, metadata lookup should also be available without starting playback.
+
+### Implementation Tasks
+
+1. Define the `MetadataProvider` interface and shared metadata structures.
+2. Select a CDDB-compatible service and document its protocol, identifier algorithm, and terms of use.
+3. Implement disc-ID calculation and unit tests against known examples.
+4. Implement request construction, response parsing, and error handling.
+5. Implement matching and validation against the local disc layout.
+6. Add interactive selection when multiple matches are returned.
+7. Implement the sidecar metadata store.
+8. Implement safe CUE metadata export.
+9. Add tests for zero, one, and multiple matches; malformed responses; network failures; and inconsistent track counts.
+10. Verify that metadata retrieval does not alter playback behavior or disc layout.
+
+### Acceptance Criteria
+
+- Metadata can be retrieved for a physical CD and an image with a valid, supported layout.
+- Multiple candidate matches can be inspected and selected.
+- Retrieved metadata is validated against the local track layout.
+- Metadata can be saved and loaded without requiring another network request.
+- User edits survive reloads and can be exported to CUE where supported.
+- Network failures do not prevent disc playback.
+- No network operation runs in the audio callback or blocks playback.
+- Automated tests run without depending on a live metadata service.
+
+
 ## Phase 3 — DiscSource Abstraction
 
 Tasks:
