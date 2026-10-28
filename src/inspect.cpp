@@ -1,6 +1,9 @@
 #include "inspect.hpp"
 
 #include "domain/audio_format.hpp"
+#include "metadata/cddb_disc_id.hpp"
+#include "metadata/metadata_matcher.hpp"
+#include "metadata/metadata_store.hpp"
 
 #include <exception>
 #include <iomanip>
@@ -23,6 +26,17 @@ std::string track_type_to_string(TrackType type) {
     return "Unknown";
 }
 
+void try_load_default_sidecar(DiscLayout& layout) {
+    try {
+        const auto sidecar_path = MetadataStore::defaultSidecarPath(layout);
+        if (MetadataStore::exists(sidecar_path)) {
+            const MetadataRecord record = MetadataStore::loadSidecar(sidecar_path);
+            MetadataMatcher::applyToLayout(layout, record);
+        }
+    } catch (...) {
+    }
+}
+
 } // namespace
 
 bool inspect_physical_cd(
@@ -32,6 +46,7 @@ bool inspect_physical_cd(
     try {
         auto source = open_physical_cd_source(device_path);
         out_disc = source->getDiscLayout();
+        try_load_default_sidecar(out_disc);
         return true;
     } catch (const std::exception& ex) {
         out_error = ex.what();
@@ -46,6 +61,7 @@ bool inspect_image(
     try {
         auto source = open_image_source(image_path);
         out_disc = source->getDiscLayout();
+        try_load_default_sidecar(out_disc);
         return true;
     } catch (const std::exception& ex) {
         out_error = ex.what();
@@ -58,6 +74,14 @@ void print_disc_inspection(const DiscLayout& disc) {
     const auto& meta = disc.discMetadata;
     const std::int64_t total_sectors = info.endLba - info.startLba;
 
+    std::string cddb_id = meta.databaseDiscId;
+    if (cddb_id.empty() && !disc.tracks.empty()) {
+        try {
+            cddb_id = calculate_cddb_disc_id(info, disc.tracks).discIdHex;
+        } catch (...) {
+        }
+    }
+
     std::cout << "====================================================================================\n";
     std::cout << "Source Type : " << disc.sourceKind << "\n";
     std::cout << "Source Path : " << disc.sourcePath << "\n";
@@ -67,6 +91,9 @@ void print_disc_inspection(const DiscLayout& disc) {
     std::cout << "LBA Range   : [" << info.startLba << ", " << info.endLba << ") "
               << "(" << total_sectors << " sectors, " << sectors_to_msf(total_sectors) << ")\n";
     std::cout << "Raw Range   : [" << info.rawStartSector << ", " << info.rawEndSector << ")\n";
+    if (!cddb_id.empty()) {
+        std::cout << "CDDB DiscID : " << cddb_id << "\n";
+    }
 
     if (!meta.empty()) {
         std::cout << "------------------------------------------------------------------------------------\n";
@@ -88,6 +115,21 @@ void print_disc_inspection(const DiscLayout& disc) {
         }
         if (meta.releaseYear.has_value()) {
             std::cout << "  Year       : " << *meta.releaseYear << "\n";
+        }
+        if (!meta.databaseProvider.empty()) {
+            std::cout << "  Provider   : " << meta.databaseProvider << "\n";
+        }
+        if (!meta.externalRecordId.empty()) {
+            std::cout << "  Record ID  : " << meta.externalRecordId << "\n";
+        }
+        if (!meta.lookupTimestamp.empty()) {
+            std::cout << "  Looked Up  : " << meta.lookupTimestamp << "\n";
+        }
+        if (meta.userCorrected) {
+            std::cout << "  User Edited: yes\n";
+        }
+        if (!meta.userNotes.empty()) {
+            std::cout << "  User Notes : " << meta.userNotes << "\n";
         }
     }
 

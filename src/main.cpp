@@ -1,4 +1,8 @@
 #include "inspect.hpp"
+#include "metadata/cddb_provider.hpp"
+#include "metadata/metadata_matcher.hpp"
+#include "metadata/metadata_store.hpp"
+#include "metadata/metadata_workflow.hpp"
 
 #include <bit>
 #include <concepts>
@@ -7,7 +11,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -270,7 +276,17 @@ void print_usage(const char* prog) {
               << "  " << prog << " --image <toc_or_cue_path>              Inspect BIN/TOC or BIN/CUE image\n"
               << "  " << prog << " --device <dev> --image <path>          Inspect and compare physical CD and image\n"
               << "  " << prog << " --image <path1> --image <path2>        Inspect and compare two images (e.g. TOC vs CUE)\n"
-              << "  " << prog << " --verify-deps                          Run Phase 1 dependency verification\n";
+              << "  " << prog << " --image <path> --interactive           Open interactive metadata/inspection console\n"
+              << "  " << prog << " --image <path> metadata <subcmd>       Execute metadata command:\n"
+              << "      metadata lookup [index] [--save]                 Query CDDB service and select candidate\n"
+              << "      metadata show                                    Display current metadata summary\n"
+              << "      metadata edit                                    Edit metadata interactively\n"
+              << "      metadata save [sidecar_path]                     Save metadata to sidecar JSON file\n"
+              << "      metadata export-cue [cue_path]                   Export metadata safely to CUE file\n"
+              << "  Options:\n"
+              << "      --cddb-url <url>                                 Override CDDB CGI endpoint URL\n"
+              << "      --sidecar <path>                                 Override sidecar metadata file path\n"
+              << "      --verify-deps                                    Run Phase 1 dependency verification\n";
 }
 
 struct SourceSpec {
@@ -287,6 +303,12 @@ int main(int argc, char* argv[]) {
 
     std::vector<SourceSpec> specs;
     bool verify_deps = false;
+    bool interactive_mode = false;
+    bool auto_save_lookup = false;
+    mycds::CddbClientConfig cddb_config{};
+    std::filesystem::path custom_sidecar_path{};
+    std::string metadata_subcmd{};
+    std::string metadata_subcmd_arg{};
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
@@ -299,6 +321,21 @@ int main(int argc, char* argv[]) {
             const std::string p2 = argv[++i];
             specs.push_back(SourceSpec{.is_device = p1.rfind("/dev/", 0) == 0, .path = p1});
             specs.push_back(SourceSpec{.is_device = p2.rfind("/dev/", 0) == 0, .path = p2});
+        } else if (arg == "--cddb-url" && i + 1 < argc) {
+            cddb_config.endpointUrl = argv[++i];
+        } else if (arg == "--sidecar" && i + 1 < argc) {
+            custom_sidecar_path = argv[++i];
+        } else if (arg == "--interactive" || arg == "-i") {
+            interactive_mode = true;
+        } else if (arg == "--save") {
+            auto_save_lookup = true;
+        } else if (arg == "--lookup-metadata") {
+            metadata_subcmd = "lookup";
+        } else if (arg == "metadata" && i + 1 < argc) {
+            metadata_subcmd = argv[++i];
+            if (i + 1 < argc && std::string_view(argv[i + 1]).rfind("--", 0) != 0) {
+                metadata_subcmd_arg = argv[++i];
+            }
         } else if (arg == "--verify-deps") {
             verify_deps = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -315,6 +352,12 @@ int main(int argc, char* argv[]) {
         return run_phase1_verification();
     }
 
+    if (specs.empty()) {
+        std::cerr << "Error: No --device or --image source specified.\n";
+        print_usage(argv[0]);
+        return 1;
+    }
+
     std::vector<mycds::DiscLayout> layouts;
     for (const auto& spec : specs) {
         mycds::DiscLayout layout{};
@@ -326,6 +369,15 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: " << error_msg << "\n";
             return 1;
         }
+        if (!custom_sidecar_path.empty() && mycds::MetadataStore::exists(custom_sidecar_path)) {
+            try {
+                const auto rec = mycds::MetadataStore::loadSidecar(custom_sidecar_path);
+                mycds::MetadataMatcher::applyToLayout(layout, rec);
+            } catch (const std::exception& ex) {
+                std::cerr << "Warning: Failed to load sidecar " << custom_sidecar_path
+                          << ": " << ex.what() << "\n";
+            }
+        }
         mycds::print_disc_inspection(layout);
         layouts.push_back(std::move(layout));
     }
@@ -334,6 +386,75 @@ int main(int argc, char* argv[]) {
         if (!mycds::compare_disc_inspections(layouts[0], layouts[1])) {
             return 1;
         }
+    }
+
+    mycds::CddbCompatibleProvider provider(cddb_config);
+
+    if (!metadata_subcmd.empty()) {
+        auto& active_layout = layouts.front();
+        if (metadata_subcmd == "lookup") {
+            std::optional<std::size_t> preselected;
+            if (!metadata_subcmd_arg.empty()) {
+                try {
+                    preselected = static_cast<std::size_t>(std::stoul(metadata_subcmd_arg));
+                } catch (...) {
+                    std::cerr << "Invalid candidate selection index: "
+                              << metadata_subcmd_arg << "\n";
+                    return 1;
+                }
+            }
+            if (!mycds::run_interactive_metadata_lookup(
+                    active_layout,
+                    provider,
+                    std::cin,
+                    std::cout,
+                    custom_sidecar_path,
+                    preselected,
+                    auto_save_lookup)) {
+                return 1;
+            }
+        } else if (metadata_subcmd == "show") {
+            mycds::print_metadata_summary(active_layout, std::cout);
+        } else if (metadata_subcmd == "edit") {
+            mycds::run_interactive_metadata_edit(active_layout, std::cin, std::cout);
+            mycds::print_metadata_summary(active_layout, std::cout);
+            const auto target =
+                !custom_sidecar_path.empty()
+                    ? custom_sidecar_path
+                    : mycds::MetadataStore::defaultSidecarPath(active_layout);
+            mycds::MetadataStore::saveSidecar(
+                target, mycds::extract_metadata_record(active_layout));
+            std::cout << "[Metadata] Saved sidecar metadata to " << target.string() << "\n";
+        } else if (metadata_subcmd == "save") {
+            const auto target =
+                !metadata_subcmd_arg.empty()
+                    ? std::filesystem::path(metadata_subcmd_arg)
+                    : !custom_sidecar_path.empty()
+                          ? custom_sidecar_path
+                          : mycds::MetadataStore::defaultSidecarPath(active_layout);
+            try {
+                mycds::MetadataStore::saveSidecar(
+                    target, mycds::extract_metadata_record(active_layout));
+                std::cout << "[Metadata] Saved sidecar metadata to " << target.string() << "\n";
+            } catch (const std::exception& ex) {
+                std::cerr << "[Metadata] Save failed: " << ex.what() << "\n";
+                return 1;
+            }
+        } else if (metadata_subcmd == "export-cue") {
+            std::ostringstream cmd_in;
+            cmd_in << "metadata export-cue " << metadata_subcmd_arg << "\nquit\n";
+            std::istringstream iss(cmd_in.str());
+            mycds::run_metadata_repl(
+                active_layout, provider, iss, std::cout, custom_sidecar_path);
+        } else {
+            std::cerr << "Unknown metadata subcommand: " << metadata_subcmd << "\n";
+            return 1;
+        }
+    }
+
+    if (interactive_mode) {
+        return mycds::run_metadata_repl(
+            layouts.front(), provider, std::cin, std::cout, custom_sidecar_path);
     }
 
     return 0;

@@ -7,8 +7,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PkgConfig REQUIRED)
 
-# 1. libcdio
+# 1. libcdio and libcurl
 pkg_check_modules(LIBCDIO REQUIRED IMPORTED_TARGET libcdio)
+pkg_check_modules(LIBCURL REQUIRED IMPORTED_TARGET libcurl)
 
 # 2. libMirage (from external/cdemu/libmirage submodule)
 list(APPEND CMAKE_MODULE_PATH
@@ -69,6 +70,11 @@ endif()
 # 4. Core library
 add_library(mycds_core STATIC
     src/inspect.cpp
+    src/metadata/cddb_disc_id.cpp
+    src/metadata/cddb_provider.cpp
+    src/metadata/metadata_matcher.cpp
+    src/metadata/metadata_store.cpp
+    src/metadata/metadata_workflow.cpp
     src/source/cue_parser.cpp
     src/source/cue_image_source.cpp
     src/source/toc_image_source.cpp
@@ -91,6 +97,7 @@ target_compile_options(mycds_core PRIVATE
 
 target_link_libraries(mycds_core PUBLIC
     PkgConfig::LIBCDIO
+    PkgConfig::LIBCURL
     mirage
     SDL3::SDL3
 )
@@ -127,4 +134,18 @@ if(GTest_FOUND)
         GTest::gtest_main
     )
     add_test(NAME cue_support_tests COMMAND cue_support_tests)
+
+    add_executable(cddb_metadata_tests
+        tests/cddb_metadata_tests.cpp
+    )
+    target_compile_options(cddb_metadata_tests PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+    target_link_libraries(cddb_metadata_tests PRIVATE
+        mycds_core
+        GTest::gtest_main
+    )
+    add_test(NAME cddb_metadata_tests COMMAND cddb_metadata_tests)
 endif()
