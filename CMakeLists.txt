@@ -69,6 +69,7 @@ endif()
 # 4. Main executable
 add_executable(cdplayer
     src/main.cpp
+    src/inspect.cpp
 )
 
 if(TARGET image-toc)

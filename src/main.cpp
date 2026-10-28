@@ -1,3 +1,5 @@
+#include "inspect.hpp"
+
 #include <bit>
 #include <concepts>
 #include <cstddef>
@@ -47,7 +49,6 @@ bool verify_libcdio() {
         return false;
     }
 
-    // Verify availability of required libcdio API symbols for Phase 2/3
     [[maybe_unused]] auto open_fn = &cdio_open;
     [[maybe_unused]] auto destroy_fn = &cdio_destroy;
     [[maybe_unused]] auto first_track_fn = &cdio_get_first_track_num;
@@ -76,17 +77,14 @@ bool verify_libmirage_image_operations() {
     const fs::path bin_path = temp_dir / "verify.bin";
     const fs::path toc_path = temp_dir / "verify.toc";
 
-    // Write 2 raw audio sectors (2 * 2352 bytes) into verify.bin
     {
         std::ofstream bin_out(bin_path, std::ios::binary);
         std::vector<char> audio_data(bytes_per_sectors<std::size_t>(2), 0);
-        // Set a recognizable big-endian sample in the first sector (0x1234 -> 0x34, 0x12 after swap)
         audio_data[0] = 0x12;
         audio_data[1] = 0x34;
         bin_out.write(audio_data.data(), static_cast<std::streamsize>(audio_data.size()));
     }
 
-    // Write a minimal cdrdao TOC file with 1 audio track and an explicit index
     {
         std::ofstream toc_out(toc_path);
         toc_out << "CD_DA\n\n"
@@ -244,9 +242,7 @@ bool verify_sdl3_audio() {
     return true;
 }
 
-} // namespace
-
-int main() {
+int run_phase1_verification() {
     std::cout << "MyCDs CD Player Prototype - Phase 1 Environment & Dependency Verification\n";
     std::cout << "-------------------------------------------------------------------------\n";
 
@@ -265,5 +261,79 @@ int main() {
 
     std::cout << "-------------------------------------------------------------------------\n";
     std::cout << "All Phase 1 dependencies and APIs verified successfully.\n";
+    return 0;
+}
+
+void print_usage(const char* prog) {
+    std::cout << "Usage:\n"
+              << "  " << prog << " --device <device_path>                 Inspect physical CD via libcdio\n"
+              << "  " << prog << " --image <toc_path>                     Inspect BIN/TOC image via libMirage\n"
+              << "  " << prog << " --device <dev> --image <toc>           Inspect and compare both sources\n"
+              << "  " << prog << " --verify-deps                          Run Phase 1 dependency verification\n";
+}
+
+} // namespace
+
+int main(int argc, char* argv[]) {
+    if (argc == 1) {
+        return run_phase1_verification();
+    }
+
+    std::string device_path;
+    std::string image_path;
+    bool verify_deps = false;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg(argv[i]);
+        if ((arg == "--device" || arg == "--inspect-device") && i + 1 < argc) {
+            device_path = argv[++i];
+        } else if ((arg == "--image" || arg == "--inspect-image") && i + 1 < argc) {
+            image_path = argv[++i];
+        } else if (arg == "--compare" && i + 2 < argc) {
+            device_path = argv[++i];
+            image_path = argv[++i];
+        } else if (arg == "--verify-deps") {
+            verify_deps = true;
+        } else if (arg == "--help" || arg == "-h") {
+            print_usage(argv[0]);
+            return 0;
+        } else {
+            std::cerr << "Unknown or incomplete argument: " << arg << "\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    if (verify_deps) {
+        return run_phase1_verification();
+    }
+
+    mycds::DiscInspection phys_disc{};
+    mycds::DiscInspection img_disc{};
+    std::string error_msg;
+
+    if (!device_path.empty()) {
+        if (!mycds::inspect_physical_cd(device_path, phys_disc, error_msg)) {
+            std::cerr << "Error: " << error_msg << "\n";
+            return 1;
+        }
+        mycds::print_disc_inspection(phys_disc);
+    }
+
+    if (!image_path.empty()) {
+        if (!mycds::inspect_image(image_path, img_disc, error_msg)) {
+            std::cerr << "Error: " << error_msg << "\n";
+            return 1;
+        }
+        mycds::print_disc_inspection(img_disc);
+        mirage_shutdown(nullptr);
+    }
+
+    if (!device_path.empty() && !image_path.empty()) {
+        if (!mycds::compare_disc_inspections(phys_disc, img_disc)) {
+            return 1;
+        }
+    }
+
     return 0;
 }
