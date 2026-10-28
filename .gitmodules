@@ -1,0 +1,3 @@
+[submodule "external/cdemu"]
+	path = external/cdemu
+	url = https://github.com/cdemu/cdemu.git
