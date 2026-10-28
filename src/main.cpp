@@ -267,10 +267,16 @@ int run_phase1_verification() {
 void print_usage(const char* prog) {
     std::cout << "Usage:\n"
               << "  " << prog << " --device <device_path>                 Inspect physical CD via libcdio\n"
-              << "  " << prog << " --image <toc_path>                     Inspect BIN/TOC image via libMirage\n"
-              << "  " << prog << " --device <dev> --image <toc>           Inspect and compare both sources\n"
+              << "  " << prog << " --image <toc_or_cue_path>              Inspect BIN/TOC or BIN/CUE image\n"
+              << "  " << prog << " --device <dev> --image <path>          Inspect and compare physical CD and image\n"
+              << "  " << prog << " --image <path1> --image <path2>        Inspect and compare two images (e.g. TOC vs CUE)\n"
               << "  " << prog << " --verify-deps                          Run Phase 1 dependency verification\n";
 }
+
+struct SourceSpec {
+    bool is_device{false};
+    std::string path{};
+};
 
 } // namespace
 
@@ -279,19 +285,20 @@ int main(int argc, char* argv[]) {
         return run_phase1_verification();
     }
 
-    std::string device_path;
-    std::string image_path;
+    std::vector<SourceSpec> specs;
     bool verify_deps = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
         if ((arg == "--device" || arg == "--inspect-device") && i + 1 < argc) {
-            device_path = argv[++i];
+            specs.push_back(SourceSpec{.is_device = true, .path = argv[++i]});
         } else if ((arg == "--image" || arg == "--inspect-image") && i + 1 < argc) {
-            image_path = argv[++i];
+            specs.push_back(SourceSpec{.is_device = false, .path = argv[++i]});
         } else if (arg == "--compare" && i + 2 < argc) {
-            device_path = argv[++i];
-            image_path = argv[++i];
+            const std::string p1 = argv[++i];
+            const std::string p2 = argv[++i];
+            specs.push_back(SourceSpec{.is_device = p1.rfind("/dev/", 0) == 0, .path = p1});
+            specs.push_back(SourceSpec{.is_device = p2.rfind("/dev/", 0) == 0, .path = p2});
         } else if (arg == "--verify-deps") {
             verify_deps = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -308,29 +315,23 @@ int main(int argc, char* argv[]) {
         return run_phase1_verification();
     }
 
-    mycds::DiscInspection phys_disc{};
-    mycds::DiscInspection img_disc{};
-    std::string error_msg;
-
-    if (!device_path.empty()) {
-        if (!mycds::inspect_physical_cd(device_path, phys_disc, error_msg)) {
+    std::vector<mycds::DiscLayout> layouts;
+    for (const auto& spec : specs) {
+        mycds::DiscLayout layout{};
+        std::string error_msg;
+        const bool ok = spec.is_device
+                            ? mycds::inspect_physical_cd(spec.path, layout, error_msg)
+                            : mycds::inspect_image(spec.path, layout, error_msg);
+        if (!ok) {
             std::cerr << "Error: " << error_msg << "\n";
             return 1;
         }
-        mycds::print_disc_inspection(phys_disc);
+        mycds::print_disc_inspection(layout);
+        layouts.push_back(std::move(layout));
     }
 
-    if (!image_path.empty()) {
-        if (!mycds::inspect_image(image_path, img_disc, error_msg)) {
-            std::cerr << "Error: " << error_msg << "\n";
-            return 1;
-        }
-        mycds::print_disc_inspection(img_disc);
-        mirage_shutdown(nullptr);
-    }
-
-    if (!device_path.empty() && !image_path.empty()) {
-        if (!mycds::compare_disc_inspections(phys_disc, img_disc)) {
+    if (layouts.size() >= 2) {
+        if (!mycds::compare_disc_inspections(layouts[0], layouts[1])) {
             return 1;
         }
     }

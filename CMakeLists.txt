@@ -66,15 +66,39 @@ if(NOT SDL3_FOUND)
     FetchContent_MakeAvailable(SDL3)
 endif()
 
-# 4. Main executable
-add_executable(cdplayer
-    src/main.cpp
+# 4. Core library
+add_library(mycds_core STATIC
     src/inspect.cpp
+    src/source/cue_parser.cpp
+    src/source/cue_image_source.cpp
+    src/source/toc_image_source.cpp
+    src/source/physical_cd_source.cpp
 )
 
 if(TARGET image-toc)
-    add_dependencies(cdplayer image-toc)
+    add_dependencies(mycds_core image-toc)
 endif()
+
+target_include_directories(mycds_core PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_compile_options(mycds_core PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)
+
+target_link_libraries(mycds_core PUBLIC
+    PkgConfig::LIBCDIO
+    mirage
+    SDL3::SDL3
+)
+
+# 5. Main executable
+add_executable(cdplayer
+    src/main.cpp
+)
 
 target_compile_options(cdplayer PRIVATE
     -Wall
@@ -83,7 +107,24 @@ target_compile_options(cdplayer PRIVATE
 )
 
 target_link_libraries(cdplayer PRIVATE
-    PkgConfig::LIBCDIO
-    mirage
-    SDL3::SDL3
+    mycds_core
 )
+
+# 6. Unit tests
+enable_testing()
+find_package(GTest QUIET)
+if(GTest_FOUND)
+    add_executable(cue_support_tests
+        tests/cue_support_tests.cpp
+    )
+    target_compile_options(cue_support_tests PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+    target_link_libraries(cue_support_tests PRIVATE
+        mycds_core
+        GTest::gtest_main
+    )
+    add_test(NAME cue_support_tests COMMAND cue_support_tests)
+endif()
