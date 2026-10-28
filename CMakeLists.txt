@@ -78,6 +78,7 @@ add_library(mycds_core STATIC
     src/source/cue_parser.cpp
     src/source/cue_image_source.cpp
     src/source/toc_image_source.cpp
+    src/source/image_source.cpp
     src/source/physical_cd_source.cpp
 )
 
@@ -148,4 +149,32 @@ if(GTest_FOUND)
         GTest::gtest_main
     )
     add_test(NAME cddb_metadata_tests COMMAND cddb_metadata_tests)
+
+    add_executable(address_conversion_tests
+        tests/address_conversion_tests.cpp
+    )
+    target_compile_options(address_conversion_tests PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+    target_link_libraries(address_conversion_tests PRIVATE
+        mycds_core
+        GTest::gtest_main
+    )
+    add_test(NAME address_conversion_tests COMMAND address_conversion_tests)
+
+    add_executable(image_source_tests
+        tests/image_source_tests.cpp
+    )
+    target_compile_options(image_source_tests PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+    target_link_libraries(image_source_tests PRIVATE
+        mycds_core
+        GTest::gtest_main
+    )
+    add_test(NAME image_source_tests COMMAND image_source_tests)
 endif()

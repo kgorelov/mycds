@@ -3,8 +3,8 @@
 #include "source/disc_source.hpp"
 
 #include <memory>
+#include <span>
 #include <string>
-#include <vector>
 
 namespace mycds {
 
@@ -15,6 +15,8 @@ public:
 
     PhysicalCdSource(const PhysicalCdSource&) = delete;
     PhysicalCdSource& operator=(const PhysicalCdSource&) = delete;
+    PhysicalCdSource(PhysicalCdSource&&) noexcept = default;
+    PhysicalCdSource& operator=(PhysicalCdSource&&) noexcept = default;
 
     std::string getSourceKind() const override;
     std::string getSourcePath() const override;
@@ -28,6 +30,11 @@ public:
     std::vector<std::byte> readAudioSectors(
         std::int64_t startLba,
         std::uint32_t sectorCount) override;
+
+    std::size_t readAudioSectors(
+        std::int64_t startLba,
+        std::uint32_t sectorCount,
+        std::span<std::byte> destination) override;
 
 private:
     struct Impl;

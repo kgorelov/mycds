@@ -4,8 +4,7 @@
 
 #include <filesystem>
 #include <memory>
-#include <string>
-#include <vector>
+#include <span>
 
 namespace mycds {
 
@@ -16,6 +15,8 @@ public:
 
     TocImageSource(const TocImageSource&) = delete;
     TocImageSource& operator=(const TocImageSource&) = delete;
+    TocImageSource(TocImageSource&&) noexcept = default;
+    TocImageSource& operator=(TocImageSource&&) noexcept = default;
 
     std::string getSourceKind() const override;
     std::string getSourcePath() const override;
@@ -29,6 +30,11 @@ public:
     std::vector<std::byte> readAudioSectors(
         std::int64_t startLba,
         std::uint32_t sectorCount) override;
+
+    std::size_t readAudioSectors(
+        std::int64_t startLba,
+        std::uint32_t sectorCount,
+        std::span<std::byte> destination) override;
 
 private:
     struct Impl;

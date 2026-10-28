@@ -29,24 +29,32 @@ struct PhysicalCdSource::Impl {
 PhysicalCdSource::PhysicalCdSource(const std::string& device_path)
     : impl_(std::make_unique<Impl>()) {
     if (!cdio_init()) {
-        throw std::runtime_error("Failed to initialize libcdio");
+        throw DiscSourceError(
+            DiscSourceErrorKind::OpenFailed,
+            "Failed to initialize libcdio");
     }
 
     impl_->cdio = cdio_open(device_path.c_str(), DRIVER_UNKNOWN);
     if (!impl_->cdio) {
-        throw std::runtime_error("Failed to open optical drive: " + device_path);
+        throw DiscSourceError(
+            DiscSourceErrorKind::OpenFailed,
+            "Failed to open optical drive: " + device_path);
     }
 
     const discmode_t disc_mode = cdio_get_discmode(impl_->cdio);
     if (disc_mode == CDIO_DISC_MODE_NO_INFO || disc_mode == CDIO_DISC_MODE_ERROR) {
-        throw std::runtime_error("No readable disc found in drive: " + device_path);
+        throw DiscSourceError(
+            DiscSourceErrorKind::NoDisc,
+            "No readable disc found in drive: " + device_path);
     }
 
     const track_t first_track = cdio_get_first_track_num(impl_->cdio);
     const track_t last_track = cdio_get_last_track_num(impl_->cdio);
     if (first_track == CDIO_INVALID_TRACK || last_track == CDIO_INVALID_TRACK ||
         first_track > last_track) {
-        throw std::runtime_error("Invalid track table reported by drive: " + device_path);
+        throw DiscSourceError(
+            DiscSourceErrorKind::UnsupportedLayout,
+            "Invalid track table reported by drive: " + device_path);
     }
 
     impl_->layout.sourceKind = "Physical CD (libcdio)";
@@ -95,7 +103,8 @@ PhysicalCdSource::PhysicalCdSource(const std::string& device_path)
         const lsn_t pregap_lsn = cdio_get_track_pregap_lsn(impl_->cdio, t);
 
         if (index01_lsn == CDIO_INVALID_LSN || last_lsn == CDIO_INVALID_LSN) {
-            throw std::runtime_error(
+            throw DiscSourceError(
+                DiscSourceErrorKind::UnsupportedLayout,
                 "Failed to query LSN range for track " + std::to_string(t));
         }
 
@@ -180,17 +189,24 @@ std::vector<TrackMetadata> PhysicalCdSource::getTrackMetadata() const {
     return impl_->layout.trackMetadata;
 }
 
-std::vector<std::byte> PhysicalCdSource::readAudioSectors(
+std::size_t PhysicalCdSource::readAudioSectors(
     std::int64_t startLba,
-    std::uint32_t sectorCount) {
+    std::uint32_t sectorCount,
+    std::span<std::byte> destination) {
+    const std::size_t required_bytes =
+        static_cast<std::size_t>(sectorCount) * AudioFormat::kBytesPerSector;
+    if (destination.size() < required_bytes) {
+        throw std::invalid_argument(
+            "Destination buffer too small for requested sectorCount");
+    }
     if (sectorCount == 0) {
-        return {};
+        return 0;
     }
 
     const auto& dinfo = impl_->layout.discInfo;
     const std::int64_t endLba = startLba + static_cast<std::int64_t>(sectorCount);
     if (startLba < dinfo.startLba || endLba > dinfo.endLba) {
-        throw std::out_of_range(
+        throw DiscOutOfRangeError(
             "Requested LBA range [" + std::to_string(startLba) + ", " +
             std::to_string(endLba) + ") is outside physical CD bounds [" +
             std::to_string(dinfo.startLba) + ", " + std::to_string(dinfo.endLba) + ")");
@@ -199,27 +215,48 @@ std::vector<std::byte> PhysicalCdSource::readAudioSectors(
     for (const auto& trk : impl_->layout.tracks) {
         if (trk.endLba > startLba && trk.startLba < endLba) {
             if (trk.type != TrackType::Audio) {
-                throw std::runtime_error(
+                throw DiscSourceError(
+                    DiscSourceErrorKind::NonAudioTrack,
                     "Cannot read audio sectors from non-audio track " +
-                    std::to_string(trk.number));
+                        std::to_string(trk.number));
             }
         }
     }
 
-    std::vector<std::byte> output(
-        static_cast<std::size_t>(sectorCount) * AudioFormat::kBytesPerSector);
-
     const driver_return_code_t rc = cdio_read_audio_sectors(
         impl_->cdio,
-        output.data(),
+        destination.data(),
         static_cast<lsn_t>(startLba),
         sectorCount);
     if (rc != DRIVER_OP_SUCCESS) {
-        throw std::runtime_error(
+        const discmode_t mode_now = cdio_get_discmode(impl_->cdio);
+        const int media_changed = cdio_get_media_changed(impl_->cdio);
+        if (mode_now == CDIO_DISC_MODE_NO_INFO ||
+            mode_now == CDIO_DISC_MODE_ERROR ||
+            media_changed == 1) {
+            throw DiscSourceError(
+                DiscSourceErrorKind::DiscRemoved,
+                "Disc removed or optical drive became unavailable at LBA " +
+                    std::to_string(startLba));
+        }
+        throw DiscSourceError(
+            DiscSourceErrorKind::ReadFailed,
             "Failed to read audio sectors from physical CD at LBA " +
-            std::to_string(startLba) + " (count=" + std::to_string(sectorCount) + ")");
+                std::to_string(startLba) + " (count=" + std::to_string(sectorCount) + ")");
     }
 
+    return required_bytes;
+}
+
+std::vector<std::byte> PhysicalCdSource::readAudioSectors(
+    std::int64_t startLba,
+    std::uint32_t sectorCount) {
+    if (sectorCount == 0) {
+        return {};
+    }
+    std::vector<std::byte> output(
+        static_cast<std::size_t>(sectorCount) * AudioFormat::kBytesPerSector);
+    readAudioSectors(startLba, sectorCount, output);
     return output;
 }
 

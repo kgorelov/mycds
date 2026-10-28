@@ -10,8 +10,22 @@
 
 namespace mycds {
 
+namespace {
+
+ParsedCueSheet parse_cue_file_or_throw_source_error(const std::filesystem::path& cue_path) {
+    try {
+        return parse_cue_file(cue_path);
+    } catch (const DiscSourceError&) {
+        throw;
+    } catch (const std::exception& ex) {
+        throw DiscSourceError(DiscSourceErrorKind::CorruptImage, ex.what());
+    }
+}
+
+} // namespace
+
 CueImageSource::CueImageSource(const std::filesystem::path& cue_path)
-    : parsed_(parse_cue_file(cue_path)) {}
+    : parsed_(parse_cue_file_or_throw_source_error(cue_path)) {}
 
 std::string CueImageSource::getSourceKind() const {
     return parsed_.layout.sourceKind;
@@ -37,31 +51,35 @@ std::vector<TrackMetadata> CueImageSource::getTrackMetadata() const {
     return parsed_.layout.trackMetadata;
 }
 
-std::vector<std::byte> CueImageSource::readAudioSectors(
+std::size_t CueImageSource::readAudioSectors(
     std::int64_t startLba,
-    std::uint32_t sectorCount) {
+    std::uint32_t sectorCount,
+    std::span<std::byte> destination) {
+    const std::size_t required_bytes =
+        static_cast<std::size_t>(sectorCount) * AudioFormat::kBytesPerSector;
+    if (destination.size() < required_bytes) {
+        throw std::invalid_argument(
+            "Destination buffer too small for requested sectorCount");
+    }
     if (sectorCount == 0) {
-        return {};
+        return 0;
     }
 
     const auto& dinfo = parsed_.layout.discInfo;
     const std::int64_t endLba = startLba + static_cast<std::int64_t>(sectorCount);
     if (startLba < dinfo.startLba || endLba > dinfo.endLba) {
-        throw std::out_of_range(
+        throw DiscOutOfRangeError(
             "Requested LBA range [" + std::to_string(startLba) + ", " +
             std::to_string(endLba) + ") is outside CUE disc bounds [" +
             std::to_string(dinfo.startLba) + ", " + std::to_string(dinfo.endLba) + ")");
     }
 
-    std::vector<std::byte> output(
-        static_cast<std::size_t>(sectorCount) * AudioFormat::kBytesPerSector,
-        std::byte{0});
+    std::memset(destination.data(), 0, required_bytes);
 
     std::int64_t cursor_lba = startLba;
     std::size_t out_byte_offset = 0;
 
     while (cursor_lba < endLba) {
-        // Find the track containing cursor_lba
         const TrackInfo* found_track = nullptr;
         const CueTrackStorage* found_storage = nullptr;
 
@@ -75,18 +93,19 @@ std::vector<std::byte> CueImageSource::readAudioSectors(
         }
 
         if (!found_track || !found_storage) {
-            throw std::runtime_error(
+            throw DiscSourceError(
+                DiscSourceErrorKind::ReadFailed,
                 "No track found covering LBA " + std::to_string(cursor_lba));
         }
 
         if (found_track->type != TrackType::Audio) {
-            throw std::runtime_error(
+            throw DiscSourceError(
+                DiscSourceErrorKind::NonAudioTrack,
                 "Cannot read audio sectors from non-audio track " +
-                std::to_string(found_track->number) + " at LBA " +
-                std::to_string(cursor_lba));
+                    std::to_string(found_track->number) + " at LBA " +
+                    std::to_string(cursor_lba));
         }
 
-        // Check if cursor_lba is inside synthetic pregap
         const std::int64_t syn_pre_end =
             found_storage->syntheticPregapStartLba + found_storage->syntheticPregapLength;
         if (found_storage->syntheticPregapLength > 0 && cursor_lba < syn_pre_end) {
@@ -96,7 +115,6 @@ std::vector<std::byte> CueImageSource::readAudioSectors(
             continue;
         }
 
-        // Check if cursor_lba is inside file-backed region
         const std::int64_t file_end =
             found_storage->fileBackedStartLba + found_storage->fileBackedLength;
         if (cursor_lba >= found_storage->fileBackedStartLba && cursor_lba < file_end) {
@@ -111,32 +129,31 @@ std::vector<std::byte> CueImageSource::readAudioSectors(
 
             std::ifstream bin_in(found_storage->filePath, std::ios::binary);
             if (!bin_in) {
-                throw std::runtime_error(
+                throw DiscSourceError(
+                    DiscSourceErrorKind::ReadFailed,
                     "Failed to open binary image file: '" +
-                    found_storage->filePath.string() + "'");
+                        found_storage->filePath.string() + "'");
             }
             bin_in.seekg(static_cast<std::streamoff>(byte_pos), std::ios::beg);
             if (!bin_in) {
-                throw std::runtime_error(
+                throw DiscSourceError(
+                    DiscSourceErrorKind::ReadFailed,
                     "Failed to seek to byte offset " + std::to_string(byte_pos) +
-                    " in '" + found_storage->filePath.string() + "'");
+                        " in '" + found_storage->filePath.string() + "'");
             }
             bin_in.read(
-                reinterpret_cast<char*>(output.data() + out_byte_offset),
+                reinterpret_cast<char*>(destination.data() + out_byte_offset),
                 static_cast<std::streamsize>(bytes_to_read));
             if (static_cast<std::size_t>(bin_in.gcount()) != bytes_to_read) {
-                throw std::runtime_error(
+                throw DiscSourceError(
+                    DiscSourceErrorKind::ReadFailed,
                     "Short read from binary image file '" +
-                    found_storage->filePath.string() + "' at LBA " +
-                    std::to_string(cursor_lba));
+                        found_storage->filePath.string() + "' at LBA " +
+                        std::to_string(cursor_lba));
             }
 
             if (found_storage->swapAudioBytes) {
-                for (std::size_t b = 0; b < bytes_to_read; b += 2) {
-                    std::swap(
-                        output[out_byte_offset + b],
-                        output[out_byte_offset + b + 1]);
-                }
+                swap_pcm16_byte_order(destination.subspan(out_byte_offset, bytes_to_read));
             }
 
             out_byte_offset += bytes_to_read;
@@ -144,7 +161,6 @@ std::vector<std::byte> CueImageSource::readAudioSectors(
             continue;
         }
 
-        // Check if cursor_lba is inside synthetic postgap
         const std::int64_t syn_post_end =
             found_storage->syntheticPostgapStartLba + found_storage->syntheticPostgapLength;
         if (found_storage->syntheticPostgapLength > 0 && cursor_lba < syn_post_end) {
@@ -154,10 +170,23 @@ std::vector<std::byte> CueImageSource::readAudioSectors(
             continue;
         }
 
-        throw std::runtime_error(
+        throw DiscSourceError(
+            DiscSourceErrorKind::ReadFailed,
             "Internal layout error at LBA " + std::to_string(cursor_lba));
     }
 
+    return required_bytes;
+}
+
+std::vector<std::byte> CueImageSource::readAudioSectors(
+    std::int64_t startLba,
+    std::uint32_t sectorCount) {
+    if (sectorCount == 0) {
+        return {};
+    }
+    std::vector<std::byte> output(
+        static_cast<std::size_t>(sectorCount) * AudioFormat::kBytesPerSector);
+    readAudioSectors(startLba, sectorCount, output);
     return output;
 }
 

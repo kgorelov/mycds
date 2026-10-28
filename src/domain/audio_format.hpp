@@ -1,14 +1,22 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <iomanip>
 #include <optional>
+#include <span>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
 namespace mycds {
+
+enum class AudioByteOrder {
+    LittleEndian,
+    BigEndian
+};
 
 struct AudioFormat {
     static constexpr std::uint32_t kSampleRate = 44100;
@@ -20,7 +28,18 @@ struct AudioFormat {
     static constexpr std::uint32_t kSectorsPerSecond = 75;
     static constexpr std::uint32_t kSecondsPerMinute = 60;
     static constexpr std::uint32_t kSectorsPerMinute = kSectorsPerSecond * kSecondsPerMinute; // 4500
+    static constexpr std::int64_t kRedBookLeadInSectors = 150; // 00:02:00 lead-in pregap
+    static constexpr AudioByteOrder kCanonicalByteOrder = AudioByteOrder::LittleEndian;
 };
+
+inline void swap_pcm16_byte_order(std::span<std::byte> pcm_bytes) {
+    if ((pcm_bytes.size() % 2U) != 0U) {
+        throw std::invalid_argument("PCM16 buffer byte size must be even for byte-order swap");
+    }
+    for (std::size_t i = 0; i < pcm_bytes.size(); i += 2U) {
+        std::swap(pcm_bytes[i], pcm_bytes[i + 1U]);
+    }
+}
 
 inline std::string sectors_to_msf(std::int64_t sectors) {
     const bool negative = sectors < 0;
@@ -94,6 +113,18 @@ inline std::optional<std::int64_t> parse_msf_to_sectors(std::string_view msf) {
     return (*mm * static_cast<std::int64_t>(AudioFormat::kSectorsPerMinute)) +
            (*ss * static_cast<std::int64_t>(AudioFormat::kSectorsPerSecond)) +
            *ff;
+}
+
+inline std::string lba_to_msf_address(std::int64_t lba) {
+    return sectors_to_msf(lba + AudioFormat::kRedBookLeadInSectors);
+}
+
+inline std::optional<std::int64_t> msf_address_to_lba(std::string_view msf) {
+    const auto frames = parse_msf_to_sectors(msf);
+    if (!frames.has_value()) {
+        return std::nullopt;
+    }
+    return *frames - AudioFormat::kRedBookLeadInSectors;
 }
 
 } // namespace mycds

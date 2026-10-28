@@ -4,8 +4,7 @@
 #include "source/disc_source.hpp"
 
 #include <filesystem>
-#include <string>
-#include <vector>
+#include <span>
 
 namespace mycds {
 
@@ -26,6 +25,11 @@ public:
     std::vector<std::byte> readAudioSectors(
         std::int64_t startLba,
         std::uint32_t sectorCount) override;
+
+    std::size_t readAudioSectors(
+        std::int64_t startLba,
+        std::uint32_t sectorCount,
+        std::span<std::byte> destination) override;
 
 private:
     ParsedCueSheet parsed_;

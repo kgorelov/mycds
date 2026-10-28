@@ -2,6 +2,7 @@
 
 #include "domain/audio_format.hpp"
 #include "source/cue_image_source.hpp"
+#include "source/image_source.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -28,15 +29,6 @@ std::string get_language_pack_string(MirageLanguage* lang, MirageLanguagePackTyp
         return std::string(str_ptr, actual_len);
     }
     return {};
-}
-
-std::string to_lower_ascii(std::string_view sv) {
-    std::string out;
-    out.reserve(sv.size());
-    for (unsigned char c : sv) {
-        out.push_back(static_cast<char>(std::tolower(c)));
-    }
-    return out;
 }
 
 } // namespace
@@ -67,7 +59,7 @@ TocImageSource::TocImageSource(const std::filesystem::path& toc_path)
         if (error) {
             g_error_free(error);
         }
-        throw std::runtime_error(msg);
+        throw DiscSourceError(DiscSourceErrorKind::OpenFailed, msg);
     }
 
     impl_->context = MIRAGE_CONTEXT(g_object_new(MIRAGE_TYPE_CONTEXT, nullptr));
@@ -80,13 +72,15 @@ TocImageSource::TocImageSource(const std::filesystem::path& toc_path)
         if (error) {
             g_error_free(error);
         }
-        throw std::runtime_error(msg);
+        throw DiscSourceError(DiscSourceErrorKind::CorruptImage, msg);
     }
 
     const gint num_sessions = mirage_disc_get_number_of_sessions(impl_->disc);
     const gint num_tracks = mirage_disc_get_number_of_tracks(impl_->disc);
     if (num_tracks <= 0) {
-        throw std::runtime_error("TOC image contains no tracks: " + path_str);
+        throw DiscSourceError(
+            DiscSourceErrorKind::UnsupportedLayout,
+            "TOC image contains no tracks: " + path_str);
     }
 
     impl_->layout.sourceKind = "TOC Image (libMirage)";
@@ -125,7 +119,7 @@ TocImageSource::TocImageSource(const std::filesystem::path& toc_path)
             if (error) {
                 g_error_free(error);
             }
-            throw std::runtime_error(msg);
+            throw DiscSourceError(DiscSourceErrorKind::CorruptImage, msg);
         }
 
         TrackInfo track_info{};
@@ -152,11 +146,12 @@ TocImageSource::TocImageSource(const std::filesystem::path& toc_path)
             static_cast<std::int64_t>(mirage_track_get_track_start(track));
 
         std::int64_t redbook_leadin_sectors = 0;
-        if (raw_track_start == -150 && mirage_track_get_number_of_fragments(track) > 0) {
+        if (raw_track_start == -AudioFormat::kRedBookLeadInSectors &&
+            mirage_track_get_number_of_fragments(track) > 0) {
             if (MirageFragment* frag0 = mirage_track_get_fragment_by_index(track, 0, nullptr)) {
                 if (mirage_fragment_main_data_get_size(frag0) == 0 &&
-                    mirage_fragment_get_length(frag0) == 150) {
-                    redbook_leadin_sectors = 150;
+                    mirage_fragment_get_length(frag0) == AudioFormat::kRedBookLeadInSectors) {
+                    redbook_leadin_sectors = AudioFormat::kRedBookLeadInSectors;
                 }
                 g_object_unref(frag0);
             }
@@ -255,17 +250,24 @@ std::vector<TrackMetadata> TocImageSource::getTrackMetadata() const {
     return impl_->layout.trackMetadata;
 }
 
-std::vector<std::byte> TocImageSource::readAudioSectors(
+std::size_t TocImageSource::readAudioSectors(
     std::int64_t startLba,
-    std::uint32_t sectorCount) {
+    std::uint32_t sectorCount,
+    std::span<std::byte> destination) {
+    const std::size_t required_bytes =
+        static_cast<std::size_t>(sectorCount) * AudioFormat::kBytesPerSector;
+    if (destination.size() < required_bytes) {
+        throw std::invalid_argument(
+            "Destination buffer too small for requested sectorCount");
+    }
     if (sectorCount == 0) {
-        return {};
+        return 0;
     }
 
     const auto& dinfo = impl_->layout.discInfo;
     const std::int64_t endLba = startLba + static_cast<std::int64_t>(sectorCount);
     if (startLba < dinfo.startLba || endLba > dinfo.endLba) {
-        throw std::out_of_range(
+        throw DiscOutOfRangeError(
             "Requested LBA range [" + std::to_string(startLba) + ", " +
             std::to_string(endLba) + ") is outside TOC disc bounds [" +
             std::to_string(dinfo.startLba) + ", " + std::to_string(dinfo.endLba) + ")");
@@ -274,15 +276,13 @@ std::vector<std::byte> TocImageSource::readAudioSectors(
     for (const auto& trk : impl_->layout.tracks) {
         if (trk.endLba > startLba && trk.startLba < endLba) {
             if (trk.type != TrackType::Audio) {
-                throw std::runtime_error(
+                throw DiscSourceError(
+                    DiscSourceErrorKind::NonAudioTrack,
                     "Cannot read audio sectors from non-audio track " +
-                    std::to_string(trk.number));
+                        std::to_string(trk.number));
             }
         }
     }
-
-    std::vector<std::byte> output(
-        static_cast<std::size_t>(sectorCount) * AudioFormat::kBytesPerSector);
 
     for (std::uint32_t i = 0; i < sectorCount; ++i) {
         const std::int64_t lba = startLba + static_cast<std::int64_t>(i);
@@ -295,7 +295,7 @@ std::vector<std::byte> TocImageSource::readAudioSectors(
             if (error) {
                 g_error_free(error);
             }
-            throw std::runtime_error(msg);
+            throw DiscSourceError(DiscSourceErrorKind::ReadFailed, msg);
         }
 
         const guint8* pcm_buf = nullptr;
@@ -309,33 +309,29 @@ std::vector<std::byte> TocImageSource::readAudioSectors(
                 g_error_free(error);
             }
             g_object_unref(sector);
-            throw std::runtime_error(msg);
+            throw DiscSourceError(DiscSourceErrorKind::ReadFailed, msg);
         }
 
         std::memcpy(
-            output.data() + static_cast<std::size_t>(i) * AudioFormat::kBytesPerSector,
+            destination.data() + static_cast<std::size_t>(i) * AudioFormat::kBytesPerSector,
             pcm_buf,
             AudioFormat::kBytesPerSector);
         g_object_unref(sector);
     }
 
-    return output;
+    return required_bytes;
 }
 
-std::unique_ptr<DiscSource> open_image_source(const std::string& image_path) {
-    const std::filesystem::path p(image_path);
-    const std::string ext = to_lower_ascii(p.extension().string());
-
-    if (ext == ".cue") {
-        return std::make_unique<CueImageSource>(p);
+std::vector<std::byte> TocImageSource::readAudioSectors(
+    std::int64_t startLba,
+    std::uint32_t sectorCount) {
+    if (sectorCount == 0) {
+        return {};
     }
-    if (ext == ".toc") {
-        return std::make_unique<TocImageSource>(p);
-    }
-
-    throw std::runtime_error(
-        "Unsupported image descriptor format '" + p.extension().string() +
-        "' for '" + image_path + "' (expected .cue or .toc)");
+    std::vector<std::byte> output(
+        static_cast<std::size_t>(sectorCount) * AudioFormat::kBytesPerSector);
+    readAudioSectors(startLba, sectorCount, output);
+    return output;
 }
 
 } // namespace mycds
