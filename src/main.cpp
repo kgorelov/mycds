@@ -10,6 +10,7 @@
 #include <bit>
 #include <chrono>
 #include <concepts>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -34,6 +35,21 @@
 #include <SDL3/SDL.h>
 
 namespace {
+
+volatile std::sig_atomic_t g_interrupt_signal = 0;
+
+void handle_termination_signal(int sig) noexcept {
+    g_interrupt_signal = sig;
+}
+
+void install_termination_signal_handlers() noexcept {
+    struct sigaction sa{};
+    sa.sa_handler = &handle_termination_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESETHAND;
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
+}
 
 template <std::integral T>
 constexpr T bytes_per_sectors(T sector_count) noexcept {
@@ -220,6 +236,7 @@ bool verify_sdl3_audio() {
               << SDL_VERSIONNUM_MINOR(version) << "."
               << SDL_VERSIONNUM_MICRO(version) << "\n";
 
+    SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
     if (!SDL_Init(SDL_INIT_AUDIO)) {
         std::cerr << "[SDL3] SDL_Init(SDL_INIT_AUDIO) failed: " << SDL_GetError() << "\n";
         return false;
@@ -522,6 +539,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (run_playback) {
+        install_termination_signal_handlers();
         try {
             const auto& spec = specs.front();
             auto src = spec.is_device
@@ -542,7 +560,7 @@ int main(int argc, char* argv[]) {
             const auto start_tp = std::chrono::steady_clock::now();
             std::optional<int> last_reported_track{};
 
-            while (true) {
+            while (g_interrupt_signal == 0) {
                 const auto st = controller.status();
                 if (st.state == mycds::PlaybackState::Error) {
                     std::cerr << "[PlaybackController] Error: " << st.errorMessage << "\n";
@@ -578,7 +596,14 @@ int main(int argc, char* argv[]) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(15));
             }
 
+            const int caught_sig = g_interrupt_signal;
+            controller.stop();
             controller.closeSource();
+            if (caught_sig != 0) {
+                std::cout << "\n[PlaybackController] Interrupted by signal "
+                          << caught_sig << "; stopped cleanly.\n";
+                return 128 + caught_sig;
+            }
         } catch (const std::exception& ex) {
             std::cerr << "[PlaybackController] Failed: " << ex.what() << "\n";
             return 1;

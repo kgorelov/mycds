@@ -145,6 +145,10 @@ void AudioOutput::open(const AudioOutputConfig& config) {
     impl_->streamError.store(false, std::memory_order_release);
     impl_->errorMessage.clear();
 
+    // Prevent SDL3's implicit event subsystem from hijacking SIGINT and SIGTERM
+    // in console applications that do not pump SDL_EVENT_QUIT.
+    SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
+
     if (!config.preferredDriver.empty()) {
         SDL_SetHint(SDL_HINT_AUDIO_DRIVER, config.preferredDriver.c_str());
     } else {
