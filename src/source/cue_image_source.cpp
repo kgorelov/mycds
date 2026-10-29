@@ -66,13 +66,14 @@ std::size_t CueImageSource::readAudioSectors(
     }
 
     const auto& dinfo = parsed_.layout.discInfo;
-    const std::int64_t endLba = startLba + static_cast<std::int64_t>(sectorCount);
-    if (startLba < dinfo.startLba || endLba > dinfo.endLba) {
+    if (startLba < dinfo.startLba || startLba > dinfo.endLba ||
+        static_cast<std::int64_t>(sectorCount) > (dinfo.endLba - startLba)) {
         throw DiscOutOfRangeError(
-            "Requested LBA range [" + std::to_string(startLba) + ", " +
-            std::to_string(endLba) + ") is outside CUE disc bounds [" +
+            "Requested LBA range starting at " + std::to_string(startLba) +
+            " (count=" + std::to_string(sectorCount) + ") is outside CUE disc bounds [" +
             std::to_string(dinfo.startLba) + ", " + std::to_string(dinfo.endLba) + ")");
     }
+    const std::int64_t endLba = startLba + static_cast<std::int64_t>(sectorCount);
 
     std::memset(destination.data(), 0, required_bytes);
 

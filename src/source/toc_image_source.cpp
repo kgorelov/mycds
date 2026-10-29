@@ -5,8 +5,10 @@
 #include "source/image_source.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <string_view>
 
@@ -15,6 +17,17 @@
 namespace mycds {
 
 namespace {
+
+struct GObjectDeleter {
+    void operator()(gpointer obj) const noexcept {
+        if (obj) {
+            g_object_unref(obj);
+        }
+    }
+};
+
+template <typename T>
+using GObjectPtr = std::unique_ptr<T, GObjectDeleter>;
 
 std::string get_language_pack_string(MirageLanguage* lang, MirageLanguagePackType pack_type) {
     if (!lang) {
@@ -112,8 +125,11 @@ TocImageSource::TocImageSource(const std::filesystem::path& toc_path)
         g_object_unref(session);
     }
 
+    std::array<guint8, AudioFormat::kBytesPerSector> probe_buffer{};
+
     for (gint i = 0; i < num_tracks; ++i) {
-        MirageTrack* track = mirage_disc_get_track_by_index(impl_->disc, i, &error);
+        GObjectPtr<MirageTrack> track_guard(mirage_disc_get_track_by_index(impl_->disc, i, &error));
+        MirageTrack* track = track_guard.get();
         if (!track) {
             std::string msg = "Failed to get track at index " + std::to_string(i);
             if (error) {
@@ -148,18 +164,44 @@ TocImageSource::TocImageSource(const std::filesystem::path& toc_path)
         std::int64_t redbook_leadin_sectors = 0;
         if (raw_track_start == -AudioFormat::kRedBookLeadInSectors &&
             mirage_track_get_number_of_fragments(track) > 0) {
-            if (MirageFragment* frag0 = mirage_track_get_fragment_by_index(track, 0, nullptr)) {
-                if (mirage_fragment_main_data_get_size(frag0) == 0 &&
-                    mirage_fragment_get_length(frag0) == AudioFormat::kRedBookLeadInSectors) {
+            if (GObjectPtr<MirageFragment> frag0{
+                    mirage_track_get_fragment_by_index(track, 0, nullptr)}) {
+                if (mirage_fragment_main_data_get_size(frag0.get()) == 0 &&
+                    mirage_fragment_get_length(frag0.get()) == AudioFormat::kRedBookLeadInSectors) {
                     redbook_leadin_sectors = AudioFormat::kRedBookLeadInSectors;
                 }
-                g_object_unref(frag0);
             }
         }
 
         track_info.startLba = raw_track_start + redbook_leadin_sectors;
         track_info.endLba = raw_track_start + raw_track_len;
         track_info.index01Lba = raw_track_start + track_start_rel;
+
+        if (track_info.startLba >= track_info.endLba) {
+            throw DiscSourceError(
+                DiscSourceErrorKind::CorruptImage,
+                "Invalid TOC track " + std::to_string(track_info.number) +
+                    " bounds [" + std::to_string(track_info.startLba) + ", " +
+                    std::to_string(track_info.endLba) + ") in '" + path_str + "'");
+        }
+        if (track_info.index01Lba < track_info.startLba ||
+            track_info.index01Lba >= track_info.endLba) {
+            throw DiscSourceError(
+                DiscSourceErrorKind::CorruptImage,
+                "Invalid TOC track " + std::to_string(track_info.number) +
+                    " INDEX 01 LBA " + std::to_string(track_info.index01Lba) +
+                    " outside [" + std::to_string(track_info.startLba) + ", " +
+                    std::to_string(track_info.endLba) + ") in '" + path_str + "'");
+        }
+        if (!impl_->layout.tracks.empty()) {
+            const auto& prev = impl_->layout.tracks.back();
+            if (track_info.number <= prev.number || track_info.startLba < prev.endLba) {
+                throw DiscSourceError(
+                    DiscSourceErrorKind::CorruptImage,
+                    "Non-monotonic or overlapping TOC track " +
+                        std::to_string(track_info.number) + " in '" + path_str + "'");
+            }
+        }
 
         const std::int64_t pregap_len = track_info.index01Lba - track_info.startLba;
         track_info.pregapLength = pregap_len;
@@ -183,16 +225,93 @@ TocImageSource::TocImageSource(const std::filesystem::path& toc_path)
 
         const gint num_extra_indices = mirage_track_get_number_of_indices(track);
         for (gint idx = 0; idx < num_extra_indices; ++idx) {
-            if (MirageIndex* mi = mirage_track_get_index_by_number(track, idx, nullptr)) {
-                const int idx_num = static_cast<int>(mirage_index_get_number(mi));
-                const std::int64_t idx_rel = static_cast<std::int64_t>(mirage_index_get_address(mi));
+            if (GObjectPtr<MirageIndex> mi{
+                    mirage_track_get_index_by_number(track, idx, nullptr)}) {
+                const int idx_num = static_cast<int>(mirage_index_get_number(mi.get()));
+                const std::int64_t idx_rel =
+                    static_cast<std::int64_t>(mirage_index_get_address(mi.get()));
+                const std::int64_t idx_lba = raw_track_start + idx_rel;
+                if (idx_lba < track_info.startLba || idx_lba >= track_info.endLba ||
+                    idx_lba < track_info.indexes.back().lba) {
+                    throw DiscSourceError(
+                        DiscSourceErrorKind::CorruptImage,
+                        "Invalid TOC sub-index " + std::to_string(idx_num) +
+                            " on track " + std::to_string(track_info.number) +
+                            " at LBA " + std::to_string(idx_lba) + " in '" + path_str + "'");
+                }
                 track_info.indexes.push_back(IndexInfo{
                     .trackNumber = track_info.number,
                     .number = idx_num,
-                    .lba = raw_track_start + idx_rel,
+                    .lba = idx_lba,
                     .explicitFromSource = true,
                 });
-                g_object_unref(mi);
+            }
+        }
+
+        if (track_info.type == TrackType::Audio) {
+            const gint num_frags = mirage_track_get_number_of_fragments(track);
+            if (num_frags <= 0) {
+                throw DiscSourceError(
+                    DiscSourceErrorKind::CorruptImage,
+                    "Audio track " + std::to_string(track_info.number) +
+                        " has no data fragments in '" + path_str + "'");
+            }
+            for (gint f = 0; f < num_frags; ++f) {
+                GError* frag_error = nullptr;
+                GObjectPtr<MirageFragment> frag(
+                    mirage_track_get_fragment_by_index(track, f, &frag_error));
+                if (!frag) {
+                    std::string msg = "Failed to inspect fragment " + std::to_string(f) +
+                                      " of audio track " + std::to_string(track_info.number);
+                    if (frag_error) {
+                        msg += std::string(": ") + frag_error->message;
+                        g_error_free(frag_error);
+                    }
+                    throw DiscSourceError(DiscSourceErrorKind::CorruptImage, msg);
+                }
+
+                const gint frag_len = mirage_fragment_get_length(frag.get());
+                if (frag_len < 0) {
+                    throw DiscSourceError(
+                        DiscSourceErrorKind::CorruptImage,
+                        "Negative fragment length in audio track " +
+                            std::to_string(track_info.number) + " in '" + path_str + "'");
+                }
+                if (frag_len == 0) {
+                    continue;
+                }
+
+                const gint main_size = mirage_fragment_main_data_get_size(frag.get());
+                const gchar* frag_file = mirage_fragment_main_data_get_filename(frag.get());
+                if (main_size == 0 && frag_file == nullptr) {
+                    continue;
+                }
+                if (main_size != static_cast<gint>(AudioFormat::kBytesPerSector)) {
+                    throw DiscSourceError(
+                        DiscSourceErrorKind::CorruptImage,
+                        "Unsupported audio sector size " + std::to_string(main_size) +
+                            " in track " + std::to_string(track_info.number) +
+                            " of '" + path_str + "'");
+                }
+
+                const gint read_last = mirage_fragment_read_main_data_fast(
+                    frag.get(),
+                    frag_len - 1,
+                    probe_buffer.data(),
+                    static_cast<gint>(AudioFormat::kBytesPerSector),
+                    &frag_error);
+                if (read_last != static_cast<gint>(AudioFormat::kBytesPerSector)) {
+                    std::string msg = "Truncated or unreadable audio data file for track " +
+                                      std::to_string(track_info.number) + " in '" + path_str + "'";
+                    if (frag_file) {
+                        msg += std::string(" (file '") + frag_file + "')";
+                    }
+                    if (frag_error) {
+                        msg += std::string(": ") + frag_error->message;
+                        g_error_free(frag_error);
+                    }
+                    throw DiscSourceError(DiscSourceErrorKind::CorruptImage, msg);
+                }
             }
         }
 
@@ -202,20 +321,19 @@ TocImageSource::TocImageSource(const std::filesystem::path& toc_path)
             track_meta.isrc = isrc;
         }
         if (mirage_track_get_number_of_languages(track) > 0) {
-            if (MirageLanguage* lang = mirage_track_get_language_by_index(track, 0, nullptr)) {
+            if (GObjectPtr<MirageLanguage> lang{
+                    mirage_track_get_language_by_index(track, 0, nullptr)}) {
                 track_meta.title =
-                    get_language_pack_string(lang, MIRAGE_LANGUAGE_PACK_TITLE);
+                    get_language_pack_string(lang.get(), MIRAGE_LANGUAGE_PACK_TITLE);
                 track_meta.performer =
-                    get_language_pack_string(lang, MIRAGE_LANGUAGE_PACK_PERFORMER);
+                    get_language_pack_string(lang.get(), MIRAGE_LANGUAGE_PACK_PERFORMER);
                 track_meta.songwriter =
-                    get_language_pack_string(lang, MIRAGE_LANGUAGE_PACK_SONGWRITER);
-                g_object_unref(lang);
+                    get_language_pack_string(lang.get(), MIRAGE_LANGUAGE_PACK_SONGWRITER);
             }
         }
 
         impl_->layout.tracks.push_back(std::move(track_info));
         impl_->layout.trackMetadata.push_back(std::move(track_meta));
-        g_object_unref(track);
     }
 
     impl_->layout.discInfo.firstTrack = impl_->layout.tracks.front().number;
@@ -265,13 +383,15 @@ std::size_t TocImageSource::readAudioSectors(
     }
 
     const auto& dinfo = impl_->layout.discInfo;
-    const std::int64_t endLba = startLba + static_cast<std::int64_t>(sectorCount);
-    if (startLba < dinfo.startLba || endLba > dinfo.endLba) {
+    if (startLba < dinfo.startLba ||
+        startLba > dinfo.endLba ||
+        static_cast<std::int64_t>(sectorCount) > (dinfo.endLba - startLba)) {
         throw DiscOutOfRangeError(
-            "Requested LBA range [" + std::to_string(startLba) + ", " +
-            std::to_string(endLba) + ") is outside TOC disc bounds [" +
+            "Requested LBA start " + std::to_string(startLba) + " (count " +
+            std::to_string(sectorCount) + ") is outside TOC disc bounds [" +
             std::to_string(dinfo.startLba) + ", " + std::to_string(dinfo.endLba) + ")");
     }
+    const std::int64_t endLba = startLba + static_cast<std::int64_t>(sectorCount);
 
     for (const auto& trk : impl_->layout.tracks) {
         if (trk.endLba > startLba && trk.startLba < endLba) {
@@ -287,10 +407,10 @@ std::size_t TocImageSource::readAudioSectors(
     for (std::uint32_t i = 0; i < sectorCount; ++i) {
         const std::int64_t lba = startLba + static_cast<std::int64_t>(i);
         GError* error = nullptr;
-        MirageSector* sector =
-            mirage_disc_get_sector(impl_->disc, static_cast<gint>(lba), &error);
-        if (!sector) {
-            std::string msg = "Failed to read TOC sector at LBA " + std::to_string(lba) + ": ";
+        GObjectPtr<MirageTrack> track(
+            mirage_disc_get_track_by_address(impl_->disc, static_cast<gint>(lba), &error));
+        if (!track) {
+            std::string msg = "Failed to locate TOC track for LBA " + std::to_string(lba) + ": ";
             msg += (error ? error->message : "unknown error");
             if (error) {
                 g_error_free(error);
@@ -298,25 +418,53 @@ std::size_t TocImageSource::readAudioSectors(
             throw DiscSourceError(DiscSourceErrorKind::ReadFailed, msg);
         }
 
-        const guint8* pcm_buf = nullptr;
-        gint pcm_len = 0;
-        if (!mirage_sector_get_data(sector, &pcm_buf, &pcm_len, &error) ||
-            pcm_buf == nullptr ||
-            static_cast<std::uint32_t>(pcm_len) != AudioFormat::kBytesPerSector) {
-            std::string msg = "Invalid audio sector payload at LBA " + std::to_string(lba);
+        const gint rel_addr =
+            static_cast<gint>(lba) - mirage_track_layout_get_start_sector(track.get());
+        GObjectPtr<MirageFragment> frag(
+            mirage_track_get_fragment_by_address(track.get(), rel_addr, &error));
+        if (!frag) {
+            std::string msg = "Failed to locate TOC fragment for LBA " + std::to_string(lba) + ": ";
+            msg += (error ? error->message : "unknown error");
+            if (error) {
+                g_error_free(error);
+            }
+            throw DiscSourceError(DiscSourceErrorKind::ReadFailed, msg);
+        }
+
+        guint8* out_ptr = reinterpret_cast<guint8*>(
+            destination.data() + static_cast<std::size_t>(i) * AudioFormat::kBytesPerSector);
+
+        const gint main_size = mirage_fragment_main_data_get_size(frag.get());
+        const gchar* frag_file = mirage_fragment_main_data_get_filename(frag.get());
+        if (main_size == 0 && frag_file == nullptr) {
+            std::memset(out_ptr, 0, AudioFormat::kBytesPerSector);
+            continue;
+        }
+
+        if (main_size != static_cast<gint>(AudioFormat::kBytesPerSector)) {
+            throw DiscSourceError(
+                DiscSourceErrorKind::ReadFailed,
+                "Unexpected TOC audio fragment sector size " + std::to_string(main_size) +
+                    " at LBA " + std::to_string(lba));
+        }
+
+        const gint frag_rel = rel_addr - mirage_fragment_get_address(frag.get());
+        const gint read_len = mirage_fragment_read_main_data_fast(
+            frag.get(),
+            frag_rel,
+            out_ptr,
+            static_cast<gint>(AudioFormat::kBytesPerSector),
+            &error);
+        if (read_len != static_cast<gint>(AudioFormat::kBytesPerSector)) {
+            std::string msg = "Short or failed audio sector read at LBA " + std::to_string(lba) +
+                              " (got " + std::to_string(read_len) + " of " +
+                              std::to_string(AudioFormat::kBytesPerSector) + " bytes)";
             if (error) {
                 msg += std::string(": ") + error->message;
                 g_error_free(error);
             }
-            g_object_unref(sector);
             throw DiscSourceError(DiscSourceErrorKind::ReadFailed, msg);
         }
-
-        std::memcpy(
-            destination.data() + static_cast<std::size_t>(i) * AudioFormat::kBytesPerSector,
-            pcm_buf,
-            AudioFormat::kBytesPerSector);
-        g_object_unref(sector);
     }
 
     return required_bytes;

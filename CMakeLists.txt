@@ -222,4 +222,18 @@ if(GTest_FOUND)
         GTest::gtest_main
     )
     add_test(NAME cli_tests COMMAND cli_tests)
+
+    add_executable(validation_hardening_tests
+        tests/validation_hardening_tests.cpp
+    )
+    target_compile_options(validation_hardening_tests PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+    target_link_libraries(validation_hardening_tests PRIVATE
+        mycds_core
+        GTest::gtest_main
+    )
+    add_test(NAME validation_hardening_tests COMMAND validation_hardening_tests)
 endif()

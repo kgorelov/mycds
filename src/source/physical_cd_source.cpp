@@ -204,13 +204,14 @@ std::size_t PhysicalCdSource::readAudioSectors(
     }
 
     const auto& dinfo = impl_->layout.discInfo;
-    const std::int64_t endLba = startLba + static_cast<std::int64_t>(sectorCount);
-    if (startLba < dinfo.startLba || endLba > dinfo.endLba) {
+    if (startLba < dinfo.startLba || startLba > dinfo.endLba ||
+        static_cast<std::int64_t>(sectorCount) > (dinfo.endLba - startLba)) {
         throw DiscOutOfRangeError(
-            "Requested LBA range [" + std::to_string(startLba) + ", " +
-            std::to_string(endLba) + ") is outside physical CD bounds [" +
+            "Requested LBA range starting at " + std::to_string(startLba) +
+            " (count=" + std::to_string(sectorCount) + ") is outside physical CD bounds [" +
             std::to_string(dinfo.startLba) + ", " + std::to_string(dinfo.endLba) + ")");
     }
+    const std::int64_t endLba = startLba + static_cast<std::int64_t>(sectorCount);
 
     for (const auto& trk : impl_->layout.tracks) {
         if (trk.endLba > startLba && trk.startLba < endLba) {

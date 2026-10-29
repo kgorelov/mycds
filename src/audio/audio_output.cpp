@@ -64,7 +64,7 @@ struct AudioOutput::Impl {
             return;
         }
         auto* self = static_cast<Impl*>(userdata);
-        if (self->paused.load(std::memory_order_relaxed)) {
+        if (self->paused.load(std::memory_order_acquire)) {
             return;
         }
 
@@ -240,9 +240,11 @@ void AudioOutput::stop() {
     }
     impl_->paused.store(true, std::memory_order_release);
     SDL_PauseAudioStreamDevice(impl_->stream);
+    SDL_LockAudioStream(impl_->stream);
     SDL_ClearAudioStream(impl_->stream);
     impl_->ringBuffer.clear();
     impl_->endOfStream.store(false, std::memory_order_release);
+    SDL_UnlockAudioStream(impl_->stream);
 }
 
 void AudioOutput::clearBuffer() {
@@ -250,9 +252,13 @@ void AudioOutput::clearBuffer() {
         return;
     }
     if (impl_->stream) {
+        SDL_LockAudioStream(impl_->stream);
         SDL_ClearAudioStream(impl_->stream);
+        impl_->ringBuffer.clear();
+        SDL_UnlockAudioStream(impl_->stream);
+    } else {
+        impl_->ringBuffer.clear();
     }
-    impl_->ringBuffer.clear();
 }
 
 void AudioOutput::setEndOfStream(bool eos) noexcept {
