@@ -76,6 +76,7 @@ add_library(mycds_core STATIC
     src/metadata/metadata_matcher.cpp
     src/metadata/metadata_store.cpp
     src/metadata/metadata_workflow.cpp
+    src/playback/playback_controller.cpp
     src/source/cue_parser.cpp
     src/source/cue_image_source.cpp
     src/source/toc_image_source.cpp
@@ -192,4 +193,18 @@ if(GTest_FOUND)
         GTest::gtest_main
     )
     add_test(NAME audio_output_tests COMMAND audio_output_tests)
+
+    add_executable(playback_tests
+        tests/playback_tests.cpp
+    )
+    target_compile_options(playback_tests PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+    target_link_libraries(playback_tests PRIVATE
+        mycds_core
+        GTest::gtest_main
+    )
+    add_test(NAME playback_tests COMMAND playback_tests)
 endif()

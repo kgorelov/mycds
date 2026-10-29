@@ -43,7 +43,7 @@ public:
     std::size_t availableToRead() const noexcept {
         const std::size_t w = write_pos_.load(std::memory_order_acquire);
         const std::size_t r = read_pos_.load(std::memory_order_acquire);
-        return w - r;
+        return (w >= r) ? (w - r) : 0U;
     }
 
     std::size_t availableToWrite() const noexcept {

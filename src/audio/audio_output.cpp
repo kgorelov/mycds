@@ -103,6 +103,7 @@ struct AudioOutput::Impl {
                     }
                     remaining -= silence_bytes;
                 } else {
+                    SDL_FlushAudioStream(sdl_stream);
                     break;
                 }
             }
@@ -146,6 +147,8 @@ void AudioOutput::open(const AudioOutputConfig& config) {
 
     if (!config.preferredDriver.empty()) {
         SDL_SetHint(SDL_HINT_AUDIO_DRIVER, config.preferredDriver.c_str());
+    } else {
+        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, nullptr);
     }
 
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
@@ -308,6 +311,13 @@ std::string AudioOutput::driverName() const {
 
 std::string AudioOutput::deviceName() const {
     return impl_ ? impl_->activeDevice : "";
+}
+
+bool AudioOutput::hasError() const noexcept {
+    if (!impl_) {
+        return false;
+    }
+    return impl_->streamError.load(std::memory_order_acquire) || !impl_->errorMessage.empty();
 }
 
 std::string AudioOutput::lastError() const {

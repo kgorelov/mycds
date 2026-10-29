@@ -4,8 +4,11 @@
 #include "metadata/metadata_matcher.hpp"
 #include "metadata/metadata_store.hpp"
 #include "metadata/metadata_workflow.hpp"
+#include "playback/playback_controller.hpp"
+#include "source/disc_source.hpp"
 
 #include <bit>
+#include <chrono>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -17,6 +20,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <cdio/cdio.h>
@@ -287,6 +291,9 @@ void print_usage(const char* prog) {
               << "  Options:\n"
               << "      --cddb-url <url>                                 Override CDDB CGI endpoint URL\n"
               << "      --sidecar <path>                                 Override sidecar metadata file path\n"
+              << "      --play [seconds]                                 Play source via PlaybackController\n"
+              << "      --seek-track <number>                            Initial track for --play\n"
+              << "      --seek-lba <lba>                                 Initial LBA for --play\n"
               << "      --test-tone [seconds]                            Play 440 Hz PCM test signal via AudioOutput\n"
               << "      --verify-deps                                    Run Phase 1 dependency verification\n";
 }
@@ -307,6 +314,10 @@ int main(int argc, char* argv[]) {
     bool verify_deps = false;
     bool run_test_tone = false;
     double test_tone_seconds = 1.0;
+    bool run_playback = false;
+    std::optional<double> play_seconds{};
+    std::optional<int> initial_seek_track{};
+    std::optional<std::int64_t> initial_seek_lba{};
     bool interactive_mode = false;
     bool auto_save_lookup = false;
     mycds::CddbClientConfig cddb_config{};
@@ -351,6 +362,31 @@ int main(int argc, char* argv[]) {
                     std::cerr << "Invalid duration for --test-tone\n";
                     return 1;
                 }
+            }
+        } else if (arg == "--play") {
+            run_playback = true;
+            if (i + 1 < argc && std::string_view(argv[i + 1]).rfind("--", 0) != 0 &&
+                std::string_view(argv[i + 1]) != "metadata") {
+                try {
+                    play_seconds = std::stod(argv[++i]);
+                } catch (...) {
+                    std::cerr << "Invalid duration for --play\n";
+                    return 1;
+                }
+            }
+        } else if (arg == "--seek-track" && i + 1 < argc) {
+            try {
+                initial_seek_track = std::stoi(argv[++i]);
+            } catch (...) {
+                std::cerr << "Invalid track number for --seek-track\n";
+                return 1;
+            }
+        } else if (arg == "--seek-lba" && i + 1 < argc) {
+            try {
+                initial_seek_lba = std::stoll(argv[++i]);
+            } catch (...) {
+                std::cerr << "Invalid LBA for --seek-lba\n";
+                return 1;
             }
         } else if (arg == "--help" || arg == "-h") {
             print_usage(argv[0]);
@@ -483,6 +519,70 @@ int main(int argc, char* argv[]) {
     if (interactive_mode) {
         return mycds::run_metadata_repl(
             layouts.front(), provider, std::cin, std::cout, custom_sidecar_path);
+    }
+
+    if (run_playback) {
+        try {
+            const auto& spec = specs.front();
+            auto src = spec.is_device
+                           ? mycds::open_physical_cd_source(spec.path)
+                           : mycds::open_image_source(spec.path);
+
+            mycds::PlaybackController controller;
+            controller.openSource(std::move(src));
+
+            if (initial_seek_track.has_value()) {
+                controller.seekToTrack(*initial_seek_track);
+            }
+            if (initial_seek_lba.has_value()) {
+                controller.seekToLba(*initial_seek_lba);
+            }
+
+            controller.play();
+            const auto start_tp = std::chrono::steady_clock::now();
+            std::optional<int> last_reported_track{};
+
+            while (true) {
+                const auto st = controller.status();
+                if (st.state == mycds::PlaybackState::Error) {
+                    std::cerr << "[PlaybackController] Error: " << st.errorMessage << "\n";
+                    return 1;
+                }
+                if (st.position.trackNumber != last_reported_track &&
+                    st.position.trackNumber.has_value()) {
+                    last_reported_track = st.position.trackNumber;
+                    std::cout << "[PlaybackController] Playing Track "
+                              << *st.position.trackNumber
+                              << " (INDEX " << st.position.indexNumber.value_or(1)
+                              << ", LBA " << st.position.lba << ")\n";
+                }
+                if (st.state == mycds::PlaybackState::Stopped && st.endOfDisc) {
+                    std::cout << "[PlaybackController] Reached end of disc at LBA "
+                              << st.position.lba << ".\n";
+                    break;
+                }
+                if (play_seconds.has_value()) {
+                    const double elapsed =
+                        std::chrono::duration<double>(std::chrono::steady_clock::now() - start_tp)
+                            .count();
+                    if (elapsed >= *play_seconds) {
+                        const auto end_st = controller.status();
+                        std::cout << "[PlaybackController] Completed " << *play_seconds
+                                  << "s playback window at LBA " << end_st.position.lba
+                                  << " (Track " << end_st.position.trackNumber.value_or(0)
+                                  << ", INDEX " << end_st.position.indexNumber.value_or(0) << ").\n";
+                        controller.stop();
+                        break;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(15));
+            }
+
+            controller.closeSource();
+        } catch (const std::exception& ex) {
+            std::cerr << "[PlaybackController] Failed: " << ex.what() << "\n";
+            return 1;
+        }
     }
 
     return 0;

@@ -63,6 +63,7 @@ public:
 
     std::string driverName() const;
     std::string deviceName() const;
+    bool hasError() const noexcept;
     std::string lastError() const;
 
 private:
