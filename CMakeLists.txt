@@ -70,6 +70,7 @@ endif()
 # 4. Core library
 add_library(mycds_core STATIC
     src/audio/audio_output.cpp
+    src/cli/command_loop.cpp
     src/inspect.cpp
     src/metadata/cddb_disc_id.cpp
     src/metadata/cddb_provider.cpp
@@ -207,4 +208,18 @@ if(GTest_FOUND)
         GTest::gtest_main
     )
     add_test(NAME playback_tests COMMAND playback_tests)
+
+    add_executable(cli_tests
+        tests/cli_tests.cpp
+    )
+    target_compile_options(cli_tests PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+    target_link_libraries(cli_tests PRIVATE
+        mycds_core
+        GTest::gtest_main
+    )
+    add_test(NAME cli_tests COMMAND cli_tests)
 endif()
