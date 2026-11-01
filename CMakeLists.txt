@@ -35,13 +35,16 @@ set_target_properties(mirage PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
 )
 
-# 3. SDL3
+# 3. SDL3 and OpenGL
+find_package(OpenGL REQUIRED)
+
 find_package(SDL3 QUIET)
 if(NOT SDL3_FOUND)
     include(FetchContent)
     set(SDL_AUDIO ON CACHE BOOL "Enable SDL3 Audio" FORCE)
-    set(SDL_VIDEO OFF CACHE BOOL "Disable SDL3 Video" FORCE)
-    set(SDL_UNIX_CONSOLE_BUILD ON CACHE BOOL "Allow console-only SDL3 build" FORCE)
+    set(SDL_VIDEO ON CACHE BOOL "Enable SDL3 Video" FORCE)
+    set(SDL_UNIX_CONSOLE_BUILD OFF CACHE BOOL "Allow console-only SDL3 build" FORCE)
+    set(SDL_OPENGL ON CACHE BOOL "Enable SDL3 OpenGL support" FORCE)
     set(SDL_RENDER OFF CACHE BOOL "Disable SDL3 Render" FORCE)
     set(SDL_GPU OFF CACHE BOOL "Disable SDL3 GPU" FORCE)
     set(SDL_CAMERA OFF CACHE BOOL "Disable SDL3 Camera" FORCE)
@@ -66,6 +69,27 @@ if(NOT SDL3_FOUND)
     )
     FetchContent_MakeAvailable(SDL3)
 endif()
+
+# 4. Dear ImGui
+add_library(imgui STATIC
+    external/imgui/imgui.cpp
+    external/imgui/imgui_demo.cpp
+    external/imgui/imgui_draw.cpp
+    external/imgui/imgui_tables.cpp
+    external/imgui/imgui_widgets.cpp
+    external/imgui/backends/imgui_impl_sdl3.cpp
+    external/imgui/backends/imgui_impl_opengl3.cpp
+)
+
+target_include_directories(imgui PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/backends"
+)
+
+target_link_libraries(imgui PUBLIC
+    SDL3::SDL3
+    OpenGL::GL
+)
 
 # 4. Core library
 add_library(mycds_core STATIC
@@ -121,7 +145,24 @@ target_link_libraries(cdplayer PRIVATE
     mycds_core
 )
 
-# 6. Unit tests
+# 6. GUI executable
+add_executable(mycds
+    src/gui/main.cpp
+)
+
+target_compile_options(mycds PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)
+
+target_link_libraries(mycds PRIVATE
+    mycds_core
+    imgui
+    OpenGL::GL
+)
+
+# 7. Unit tests
 enable_testing()
 find_package(GTest QUIET)
 if(GTest_FOUND)
