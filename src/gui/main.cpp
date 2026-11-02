@@ -57,6 +57,9 @@ int main(int argc, char* argv[]) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
+    // Embedded scalable vector font
+    io.Fonts->AddFontDefaultVector();
+
     ImGui::StyleColorsDark();
 
     // Setup Platform/Renderer backends

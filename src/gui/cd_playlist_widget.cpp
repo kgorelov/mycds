@@ -74,6 +74,7 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     );
 
     // Header Row
+    const float text_line_h = ImGui::GetTextLineHeight();
     const float header_y = glass_min.y + 10.0f;
     draw_list->AddText(ImVec2(glass_min.x + 16.0f, header_y),
                        IM_COL32(160, 110, 50, 180), "COMPACT DISC DIGITAL AUDIO");
@@ -96,7 +97,7 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
                        kAmberMuted, disc_info_buf);
 
     // Column Headers
-    const float col_header_y = header_y + 22.0f;
+    const float col_header_y = header_y + text_line_h + 8.0f;
     draw_list->AddLine(ImVec2(glass_min.x + 12.0f, col_header_y - 2.0f),
                        ImVec2(glass_max.x - 12.0f, col_header_y - 2.0f),
                        IM_COL32(50, 40, 30, 200), 1.0f);
@@ -109,12 +110,12 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     draw_list->AddText(ImVec2(col_title_x, col_header_y), kAmberMuted, "TITLE");
     draw_list->AddText(ImVec2(col_time_x, col_header_y),  kAmberMuted, "TIME");
 
-    draw_list->AddLine(ImVec2(glass_min.x + 12.0f, col_header_y + 18.0f),
-                       ImVec2(glass_max.x - 12.0f, col_header_y + 18.0f),
+    draw_list->AddLine(ImVec2(glass_min.x + 12.0f, col_header_y + text_line_h + 3.0f),
+                       ImVec2(glass_max.x - 12.0f, col_header_y + text_line_h + 3.0f),
                        IM_COL32(60, 48, 34, 255), 1.0f);
 
     // Child Window for Scrollable Sparse Track List
-    const float list_start_y = col_header_y + 24.0f;
+    const float list_start_y = col_header_y + text_line_h + 8.0f;
     const float list_h = glass_max.y - list_start_y - 8.0f;
     const float list_w = glass_w - 24.0f;
 
@@ -127,15 +128,19 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(1.0f, 0.65f, 0.15f, 1.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 3.0f));
 
+    // Increase font size specifically for the tracklist items
+    ImGui::PushFont(nullptr, 16.5f);
+
     ImGui::BeginChild("TrackListChild", ImVec2(list_w, list_h), false,
                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
     ImDrawList* child_draw_list = ImGui::GetWindowDrawList();
     const int current_track_num = model.current_track_number();
+    const float track_text_h = ImGui::GetTextLineHeight();
+    const float item_h = std::max(27.0f, track_text_h + 8.0f);
 
     for (const auto& track : model.tracks()) {
         const bool is_active = (track.number == current_track_num);
-        const float item_h = 24.0f;
         const ImVec2 row_pos = ImGui::GetCursorScreenPos();
         const ImVec2 row_size(list_w - 18.0f, item_h);
         const ImVec2 row_end(row_pos.x + row_size.x, row_pos.y + row_size.y);
@@ -157,13 +162,14 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
         }
 
         const ImU32 text_col = is_active ? kGreenLitCore : kAmberLitCore;
-        const float text_y = row_pos.y + 4.0f;
+        const float text_y = row_pos.y + (item_h - track_text_h) * 0.5f;
 
         // Active Track Arrow indicator
         if (is_active) {
-            const ImVec2 t1(row_pos.x + 4.0f, text_y + 2.0f);
-            const ImVec2 t2(row_pos.x + 11.0f, text_y + 7.0f);
-            const ImVec2 t3(row_pos.x + 4.0f, text_y + 12.0f);
+            const float arrow_y = row_pos.y + item_h * 0.5f;
+            const ImVec2 t1(row_pos.x + 4.0f, arrow_y - 5.0f);
+            const ImVec2 t2(row_pos.x + 11.0f, arrow_y);
+            const ImVec2 t3(row_pos.x + 4.0f, arrow_y + 5.0f);
             child_draw_list->AddTriangleFilled(t1, t2, t3, kGreenLitCore);
             child_draw_list->AddTriangleFilled(t1, t2, t3, kGreenLitGlow);
         }
@@ -186,6 +192,7 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     }
 
     ImGui::EndChild();
+    ImGui::PopFont();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(5);
 
