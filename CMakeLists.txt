@@ -147,6 +147,8 @@ target_link_libraries(cdplayer PRIVATE
 
 # 6. GUI executable
 add_executable(mycds
+    src/gui/cd_display_model.cpp
+    src/gui/cd_display_widget.cpp
     src/gui/main.cpp
 )
 
@@ -277,4 +279,21 @@ if(GTest_FOUND)
         GTest::gtest_main
     )
     add_test(NAME validation_hardening_tests COMMAND validation_hardening_tests)
+
+    add_executable(cd_display_model_tests
+        tests/cd_display_model_tests.cpp
+        src/gui/cd_display_model.cpp
+    )
+    target_compile_options(cd_display_model_tests PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+    target_include_directories(cd_display_model_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(cd_display_model_tests PRIVATE
+        GTest::gtest_main
+    )
+    add_test(NAME cd_display_model_tests COMMAND cd_display_model_tests)
 endif()

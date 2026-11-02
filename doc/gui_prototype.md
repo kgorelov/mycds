@@ -24,9 +24,24 @@ It must have a 7-segment style display that will be displaying track number and 
 Underneath there must be several small green graphics (icons) indicators for "repeat (track/disk)", "shuffle", "cloud", "CDDB".
 When inactive, the indicator must be dark-dark green, when active, glowing green. The could and CDDB indicators may also turn red when there's no connectivity.
 
-### LED volume indicator
-Square LEDs, red, yellow and green. Like on the old recorders.
+At this phase we're only making the widget, so no need to port the real player functionality yet. 
+Let's do a simulation, time ticking when "playing" showing track time (when not paused).
 
-### Track list
+Control keys:
+  - space: play/pause
+  - 's': toggles 'Shuffle'
+  - 'r' toggles repeat
+  - 'n' | pgdown: next track
+  - 'p' | pgup: prev track
+
+The "cloud" and "CDDB" indicators must start disabled and must turn on after 3 seconds.
+
+
+### Phase 2.2 - Track list
 A list, pretty sparse. Track number, track name
+
+
+
+### Phase 2.3 - LED volume indicator
+Square LEDs, red, yellow and green. Like on the old recorders.
 

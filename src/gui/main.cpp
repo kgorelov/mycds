@@ -3,6 +3,8 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
 
+#include "cd_display_model.h"
+#include "cd_display_widget.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
@@ -29,7 +31,7 @@ int main(int argc, char* argv[]) {
     const SDL_WindowFlags window_flags = SDL_WINDOW_OPENGL |
                                          SDL_WINDOW_RESIZABLE |
                                          SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    SDL_Window* window = SDL_CreateWindow("MyCDs", 800, 600, window_flags);
+    SDL_Window* window = SDL_CreateWindow("MyCDs", 840, 560, window_flags);
     if (!window) {
         std::cerr << "Failed to create SDL window: " << SDL_GetError() << '\n';
         SDL_Quit();
@@ -76,6 +78,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    mycds::gui::CdDisplayModel display_model;
+
     bool running = true;
     while (running) {
         SDL_Event event;
@@ -108,11 +112,33 @@ int main(int argc, char* argv[]) {
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
+        // Keyboard controls
         if (ImGui::IsKeyPressed(ImGuiKey_Q) || ImGui::IsKeyPressed(ImGuiKey_F10)) {
             running = false;
         }
+        if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
+            display_model.toggle_play_pause();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_S)) {
+            display_model.toggle_shuffle();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_R)) {
+            display_model.toggle_repeat();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_N) || ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
+            display_model.next_track();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_P) || ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
+            display_model.prev_track();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_C)) {
+            display_model.toggle_connectivity();
+        }
 
-        // Phase 1: Display an empty window
+        // Update simulation time
+        display_model.update(static_cast<double>(io.DeltaTime));
+
+        // Display root window
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -123,8 +149,98 @@ int main(int argc, char* argv[]) {
             ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_NoBringToFrontOnFocus;
 
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 20.0f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.10f, 0.12f, 1.0f));
+
         ImGui::Begin("MyCDsMainWindow", nullptr, host_window_flags);
+
+        // Center display widget horizontally
+        constexpr float widget_w = 680.0f;
+        constexpr float widget_h = 250.0f;
+        const float avail_w = ImGui::GetContentRegionAvail().x;
+        const float indent_x = (avail_w > widget_w) ? ((avail_w - widget_w) * 0.5f) : 0.0f;
+
+        if (indent_x > 0.0f) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent_x);
+        }
+
+        // Phase 2.1: CD Player Display Widget
+        mycds::gui::RenderCdDisplay(display_model, ImVec2(widget_w, widget_h));
+
+        // Transport Controls Bar
+        ImGui::Spacing();
+        ImGui::Spacing();
+
+        if (indent_x > 0.0f) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent_x);
+        }
+
+        ImGui::BeginGroup();
+        {
+            const ImVec2 btn_size(90.0f, 34.0f);
+
+            if (ImGui::Button("|<< Prev", btn_size)) {
+                display_model.prev_track();
+            }
+            ImGui::SameLine();
+
+            const char* play_label = display_model.is_playing() ? "|| Pause" : "> Play";
+            if (ImGui::Button(play_label, btn_size)) {
+                display_model.toggle_play_pause();
+            }
+            ImGui::SameLine();
+
+            if (ImGui::Button("Next >>|", btn_size)) {
+                display_model.next_track();
+            }
+            ImGui::SameLine();
+
+            const char* shuf_label = display_model.is_shuffle() ? "Shuffle [ON]" : "Shuffle [OFF]";
+            if (ImGui::Button(shuf_label, ImVec2(110.0f, 34.0f))) {
+                display_model.toggle_shuffle();
+            }
+            ImGui::SameLine();
+
+            const char* rep_label = (display_model.repeat_mode() == mycds::gui::RepeatMode::Off)
+                                        ? "Repeat [OFF]"
+                                        : ((display_model.repeat_mode() == mycds::gui::RepeatMode::Disc)
+                                               ? "Repeat [DISC]"
+                                               : "Repeat [1]");
+            if (ImGui::Button(rep_label, ImVec2(120.0f, 34.0f))) {
+                display_model.toggle_repeat();
+            }
+            ImGui::SameLine();
+
+            const bool conn = (display_model.connectivity_status() == mycds::gui::ConnectivityStatus::Connected);
+            const char* net_label = conn ? "Net: Online" : "Net: Offline";
+            if (ImGui::Button(net_label, ImVec2(115.0f, 34.0f))) {
+                display_model.toggle_connectivity();
+            }
+        }
+        ImGui::EndGroup();
+
+        // Keyboard Controls Reference
+        ImGui::Spacing();
+        ImGui::Spacing();
+
+        if (indent_x > 0.0f) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent_x);
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.58f, 1.0f));
+        ImGui::TextDisabled("KEYBOARD SHORTCUTS:");
+        ImGui::BulletText("Space: Play / Pause");
+        ImGui::BulletText("S: Toggle Shuffle");
+        ImGui::BulletText("R: Toggle Repeat (Off -> Disc -> Track 1)");
+        ImGui::BulletText("N / PageDown: Next Track");
+        ImGui::BulletText("P / PageUp: Previous Track");
+        ImGui::BulletText("C: Toggle Network Connectivity (simulates online / offline)");
+        ImGui::BulletText("Q / F10: Quit Application");
+        ImGui::PopStyleColor();
+
         ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
 
         // Rendering
         ImGui::Render();
@@ -132,7 +248,7 @@ int main(int argc, char* argv[]) {
         int fb_height = 0;
         SDL_GetWindowSizeInPixels(window, &fb_width, &fb_height);
         glViewport(0, 0, fb_width, fb_height);
-        glClearColor(0.12f, 0.12f, 0.14f, 1.0f);
+        glClearColor(0.08f, 0.08f, 0.09f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         SDL_GL_SwapWindow(window);
