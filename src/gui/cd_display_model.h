@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace mycds::gui {
@@ -19,6 +20,7 @@ enum class ConnectivityStatus {
 struct TrackInfo {
     int number{1};
     int duration_seconds{222};
+    std::string title;
 };
 
 class CdDisplayModel {
@@ -37,6 +39,7 @@ public:
 
     void next_track();
     void prev_track();
+    void jump_to_track(int track_number);
 
     void set_connectivity(ConnectivityStatus status);
     void toggle_connectivity();
@@ -48,6 +51,8 @@ public:
 
     [[nodiscard]] int current_track_number() const;
     [[nodiscard]] int total_tracks() const;
+    [[nodiscard]] size_t current_track_index() const;
+    [[nodiscard]] const std::vector<TrackInfo>& tracks() const;
 
     [[nodiscard]] double track_elapsed_seconds() const;
     [[nodiscard]] int track_duration_seconds() const;

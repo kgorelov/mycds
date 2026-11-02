@@ -149,6 +149,7 @@ target_link_libraries(cdplayer PRIVATE
 add_executable(mycds
     src/gui/cd_display_model.cpp
     src/gui/cd_display_widget.cpp
+    src/gui/cd_playlist_widget.cpp
     src/gui/main.cpp
 )
 

@@ -5,6 +5,7 @@
 
 #include "cd_display_model.h"
 #include "cd_display_widget.h"
+#include "cd_playlist_widget.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
@@ -31,7 +32,7 @@ int main(int argc, char* argv[]) {
     const SDL_WindowFlags window_flags = SDL_WINDOW_OPENGL |
                                          SDL_WINDOW_RESIZABLE |
                                          SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    SDL_Window* window = SDL_CreateWindow("MyCDs", 840, 560, window_flags);
+    SDL_Window* window = SDL_CreateWindow("MyCDs", 1460, 680, window_flags);
     if (!window) {
         std::cerr << "Failed to create SDL window: " << SDL_GetError() << '\n';
         SDL_Quit();
@@ -135,6 +136,38 @@ int main(int argc, char* argv[]) {
             display_model.toggle_connectivity();
         }
 
+        // Direct track selection (1-9 for tracks 1-9, 0 for track 10)
+        if (ImGui::IsKeyPressed(ImGuiKey_1) || ImGui::IsKeyPressed(ImGuiKey_Keypad1)) {
+            display_model.jump_to_track(1);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_2) || ImGui::IsKeyPressed(ImGuiKey_Keypad2)) {
+            display_model.jump_to_track(2);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_3) || ImGui::IsKeyPressed(ImGuiKey_Keypad3)) {
+            display_model.jump_to_track(3);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_4) || ImGui::IsKeyPressed(ImGuiKey_Keypad4)) {
+            display_model.jump_to_track(4);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_5) || ImGui::IsKeyPressed(ImGuiKey_Keypad5)) {
+            display_model.jump_to_track(5);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_6) || ImGui::IsKeyPressed(ImGuiKey_Keypad6)) {
+            display_model.jump_to_track(6);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_7) || ImGui::IsKeyPressed(ImGuiKey_Keypad7)) {
+            display_model.jump_to_track(7);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_8) || ImGui::IsKeyPressed(ImGuiKey_Keypad8)) {
+            display_model.jump_to_track(8);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_9) || ImGui::IsKeyPressed(ImGuiKey_Keypad9)) {
+            display_model.jump_to_track(9);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_0) || ImGui::IsKeyPressed(ImGuiKey_Keypad0)) {
+            display_model.jump_to_track(10);
+        }
+
         // Update simulation time
         display_model.update(static_cast<double>(io.DeltaTime));
 
@@ -154,29 +187,29 @@ int main(int argc, char* argv[]) {
 
         ImGui::Begin("MyCDsMainWindow", nullptr, host_window_flags);
 
-        // Center display widget horizontally
         constexpr float widget_w = 680.0f;
         constexpr float widget_h = 250.0f;
+        constexpr float playlist_w = 680.0f;
+        constexpr float playlist_h = 420.0f;
+
         const float avail_w = ImGui::GetContentRegionAvail().x;
-        const float indent_x = (avail_w > widget_w) ? ((avail_w - widget_w) * 0.5f) : 0.0f;
+        const float total_panels_w = widget_w + 24.0f + playlist_w;
+        const float indent_x = (avail_w > total_panels_w) ? ((avail_w - total_panels_w) * 0.5f) : 0.0f;
 
         if (indent_x > 0.0f) {
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent_x);
         }
 
-        // Phase 2.1: CD Player Display Widget
-        mycds::gui::RenderCdDisplay(display_model, ImVec2(widget_w, widget_h));
-
-        // Transport Controls Bar
-        ImGui::Spacing();
-        ImGui::Spacing();
-
-        if (indent_x > 0.0f) {
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent_x);
-        }
-
+        // Left Column: Main CD Player Display + Future Widgets Space + Transport Controls
         ImGui::BeginGroup();
         {
+            // Phase 2.1: CD Player Display Widget
+            mycds::gui::RenderCdDisplay(display_model, ImVec2(widget_w, widget_h));
+
+            // Space left underneath the main CD display for future widgets (e.g. Phase 2.3 LED volume indicator)
+            ImGui::Dummy(ImVec2(widget_w, 28.0f));
+
+            // Transport Controls Bar
             const ImVec2 btn_size(90.0f, 34.0f);
 
             if (ImGui::Button("|<< Prev", btn_size)) {
@@ -216,27 +249,32 @@ int main(int argc, char* argv[]) {
             if (ImGui::Button(net_label, ImVec2(115.0f, 34.0f))) {
                 display_model.toggle_connectivity();
             }
+
+            // Keyboard Controls Reference
+            ImGui::Spacing();
+            ImGui::Spacing();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.58f, 1.0f));
+            ImGui::TextDisabled("KEYBOARD SHORTCUTS:");
+            ImGui::BulletText("Space: Play / Pause");
+            ImGui::BulletText("S: Toggle Shuffle   |   R: Toggle Repeat");
+            ImGui::BulletText("N / PageDown: Next  |   P / PageUp: Previous Track");
+            ImGui::BulletText("1 - 9: Jump to Track 1-9   |   0: Jump to Track 10");
+            ImGui::BulletText("C: Toggle Network Connectivity (simulates online / offline)");
+            ImGui::BulletText("Q / F10: Quit Application");
+            ImGui::PopStyleColor();
         }
         ImGui::EndGroup();
 
-        // Keyboard Controls Reference
-        ImGui::Spacing();
-        ImGui::Spacing();
+        ImGui::SameLine(0.0f, 24.0f);
 
-        if (indent_x > 0.0f) {
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent_x);
+        // Right Column: Phase 2.2 CD Playlist Widget
+        ImGui::BeginGroup();
+        {
+            const float actual_playlist_w = std::max(playlist_w, avail_w - widget_w - 24.0f - indent_x);
+            mycds::gui::RenderCdPlaylist(display_model, ImVec2(actual_playlist_w, playlist_h));
         }
-
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.58f, 1.0f));
-        ImGui::TextDisabled("KEYBOARD SHORTCUTS:");
-        ImGui::BulletText("Space: Play / Pause");
-        ImGui::BulletText("S: Toggle Shuffle");
-        ImGui::BulletText("R: Toggle Repeat (Off -> Disc -> Track 1)");
-        ImGui::BulletText("N / PageDown: Next Track");
-        ImGui::BulletText("P / PageUp: Previous Track");
-        ImGui::BulletText("C: Toggle Network Connectivity (simulates online / offline)");
-        ImGui::BulletText("Q / F10: Quit Application");
-        ImGui::PopStyleColor();
+        ImGui::EndGroup();
 
         ImGui::End();
         ImGui::PopStyleColor();

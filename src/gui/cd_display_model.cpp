@@ -7,18 +7,18 @@ namespace mycds::gui {
 
 CdDisplayModel::CdDisplayModel() {
     tracks_ = {
-        {1, 222},  // 03:42
-        {2, 255},  // 04:15
-        {3, 178},  // 02:58
-        {4, 321},  // 05:21
-        {5, 192},  // 03:12
-        {6, 288},  // 04:48
-        {7, 364},  // 06:04
-        {8, 213},  // 03:33
-        {9, 260},  // 04:20
-        {10, 165}, // 02:45
-        {11, 310}, // 05:10
-        {12, 230}  // 03:50
+        {1, 222, "Speak to Me / Breathe"},
+        {2, 255, "On the Run"},
+        {3, 178, "Time"},
+        {4, 321, "The Great Gig in the Sky"},
+        {5, 192, "Money"},
+        {6, 288, "Us and Them"},
+        {7, 364, "Any Colour You Like"},
+        {8, 213, "Brain Damage"},
+        {9, 260, "Eclipse"},
+        {10, 165, "Shine On You Crazy Diamond (Part I)"},
+        {11, 310, "Welcome to the Machine"},
+        {12, 230, "Wish You Were Here"}
     };
 }
 
@@ -114,6 +114,14 @@ void CdDisplayModel::prev_track() {
     }
 }
 
+void CdDisplayModel::jump_to_track(int track_number) {
+    if (track_number < 1 || track_number > static_cast<int>(tracks_.size())) {
+        return;
+    }
+    current_track_index_ = static_cast<size_t>(track_number - 1);
+    track_elapsed_seconds_ = 0.0;
+}
+
 void CdDisplayModel::set_connectivity(ConnectivityStatus status) {
     connectivity_ = status;
 }
@@ -149,6 +157,14 @@ int CdDisplayModel::current_track_number() const {
 
 int CdDisplayModel::total_tracks() const {
     return static_cast<int>(tracks_.size());
+}
+
+size_t CdDisplayModel::current_track_index() const {
+    return current_track_index_;
+}
+
+const std::vector<TrackInfo>& CdDisplayModel::tracks() const {
+    return tracks_;
 }
 
 double CdDisplayModel::track_elapsed_seconds() const {

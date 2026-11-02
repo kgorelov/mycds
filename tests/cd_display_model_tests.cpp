@@ -115,3 +115,27 @@ TEST(CdDisplayModelTests, ConnectivityToggle) {
     model.toggle_connectivity();
     EXPECT_EQ(model.connectivity_status(), ConnectivityStatus::Connected);
 }
+
+TEST(CdDisplayModelTests, JumpToTrackAndPlaylistInfo) {
+    CdDisplayModel model;
+
+    EXPECT_EQ(model.total_tracks(), 12);
+    EXPECT_FALSE(model.tracks()[0].title.empty());
+
+    model.update(10.0);
+    EXPECT_GT(model.track_elapsed_seconds(), 0.0);
+
+    model.jump_to_track(5);
+    EXPECT_EQ(model.current_track_number(), 5);
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+
+    model.jump_to_track(10);
+    EXPECT_EQ(model.current_track_number(), 10);
+
+    // Out of bounds jumps should be ignored
+    model.jump_to_track(0);
+    EXPECT_EQ(model.current_track_number(), 10);
+
+    model.jump_to_track(99);
+    EXPECT_EQ(model.current_track_number(), 10);
+}
