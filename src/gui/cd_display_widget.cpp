@@ -464,6 +464,7 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
         const bool repeat_on = (model.repeat_mode() != RepeatMode::Off);
         const ImU32 col_core = repeat_on ? kGreenLitCore : kGreenUnlit;
         const ImU32 col_glow = repeat_on ? kGreenLitGlow : 0;
+        const float text_y = tile_pos.y + (ind_tile_h - ImGui::GetTextLineHeight()) * 0.5f;
 
         // Background slot
         draw_list->AddRectFilled(tile_pos, ImVec2(tile_pos.x + ind_tile_w, tile_pos.y + ind_tile_h),
@@ -483,9 +484,9 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
             label += " 1";
         }
         if (repeat_on) {
-            draw_list->AddText(ImVec2(tile_pos.x + 36.0f, tile_pos.y + 9.0f), col_glow, label.c_str());
+            draw_list->AddText(ImVec2(tile_pos.x + 36.0f, text_y), col_glow, label.c_str());
         }
-        draw_list->AddText(ImVec2(tile_pos.x + 36.0f, tile_pos.y + 9.0f), col_core, label.c_str());
+        draw_list->AddText(ImVec2(tile_pos.x + 36.0f, text_y), col_core, label.c_str());
 
         // Mouse click support
         ImGui::SetCursorScreenPos(tile_pos);
@@ -504,6 +505,7 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
         const bool shuffle_on = model.is_shuffle();
         const ImU32 col_core = shuffle_on ? kGreenLitCore : kGreenUnlit;
         const ImU32 col_glow = shuffle_on ? kGreenLitGlow : 0;
+        const float text_y = tile_pos.y + (ind_tile_h - ImGui::GetTextLineHeight()) * 0.5f;
 
         draw_list->AddRectFilled(tile_pos, ImVec2(tile_pos.x + ind_tile_w, tile_pos.y + ind_tile_h),
                                  IM_COL32(8, 16, 10, 200), 4.0f);
@@ -514,9 +516,9 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
                            18.0f, col_core, col_glow, shuffle_on);
 
         if (shuffle_on) {
-            draw_list->AddText(ImVec2(tile_pos.x + 40.0f, tile_pos.y + 9.0f), col_glow, "SHUFFLE");
+            draw_list->AddText(ImVec2(tile_pos.x + 40.0f, text_y), col_glow, "SHUFFLE");
         }
-        draw_list->AddText(ImVec2(tile_pos.x + 40.0f, tile_pos.y + 9.0f), col_core, "SHUFFLE");
+        draw_list->AddText(ImVec2(tile_pos.x + 40.0f, text_y), col_core, "SHUFFLE");
 
         ImGui::SetCursorScreenPos(tile_pos);
         if (ImGui::InvisibleButton("ShuffleIndicatorBtn", ImVec2(ind_tile_w, ind_tile_h))) {
@@ -534,6 +536,7 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
         ImU32 col_core = kGreenUnlit;
         ImU32 col_glow = 0;
         bool is_lit = false;
+        const float text_y = tile_pos.y + (ind_tile_h - ImGui::GetTextLineHeight()) * 0.5f;
 
         if (cloud_active) {
             is_lit = true;
@@ -556,9 +559,9 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
                          20.0f, col_core, col_glow, is_lit);
 
         if (is_lit) {
-            draw_list->AddText(ImVec2(tile_pos.x + 44.0f, tile_pos.y + 9.0f), col_glow, "CLOUD");
+            draw_list->AddText(ImVec2(tile_pos.x + 44.0f, text_y), col_glow, "CLOUD");
         }
-        draw_list->AddText(ImVec2(tile_pos.x + 44.0f, tile_pos.y + 9.0f), col_core, "CLOUD");
+        draw_list->AddText(ImVec2(tile_pos.x + 44.0f, text_y), col_core, "CLOUD");
 
         ImGui::SetCursorScreenPos(tile_pos);
         if (ImGui::InvisibleButton("CloudIndicatorBtn", ImVec2(ind_tile_w, ind_tile_h))) {
@@ -576,6 +579,7 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
         ImU32 col_core = kGreenUnlit;
         ImU32 col_glow = 0;
         bool is_lit = false;
+        const float text_y = tile_pos.y + (ind_tile_h - ImGui::GetTextLineHeight()) * 0.5f;
 
         if (cddb_active) {
             is_lit = true;
@@ -598,9 +602,9 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
                         20.0f, col_core, col_glow, is_lit);
 
         if (is_lit) {
-            draw_list->AddText(ImVec2(tile_pos.x + 44.0f, tile_pos.y + 9.0f), col_glow, "CDDB");
+            draw_list->AddText(ImVec2(tile_pos.x + 44.0f, text_y), col_glow, "CDDB");
         }
-        draw_list->AddText(ImVec2(tile_pos.x + 44.0f, tile_pos.y + 9.0f), col_core, "CDDB");
+        draw_list->AddText(ImVec2(tile_pos.x + 44.0f, text_y), col_core, "CDDB");
 
         ImGui::SetCursorScreenPos(tile_pos);
         if (ImGui::InvisibleButton("CddbIndicatorBtn", ImVec2(ind_tile_w, ind_tile_h))) {
@@ -611,6 +615,9 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
                                IM_COL32(120, 255, 150, 120), 4.0f);
         }
     }
+
+    // Restore cursor position to right below the display widget
+    ImGui::SetCursorScreenPos(ImVec2(screen_pos.x, display_end.y + 14.0f));
 }
 
 } // namespace mycds::gui
