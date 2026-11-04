@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     const SDL_WindowFlags window_flags = SDL_WINDOW_OPENGL |
                                          SDL_WINDOW_RESIZABLE |
                                          SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    SDL_Window* window = SDL_CreateWindow("MyCDs", 1460, 720, window_flags);
+    SDL_Window* window = SDL_CreateWindow("MyCDs", 1460, 500, window_flags);
     if (!window) {
         std::cerr << "Failed to create SDL window: " << SDL_GetError() << '\n';
         SDL_Quit();
@@ -194,7 +194,7 @@ int main(int argc, char* argv[]) {
         constexpr float widget_w = 680.0f;
         constexpr float widget_h = 250.0f;
         constexpr float playlist_w = 680.0f;
-        constexpr float playlist_h = 440.0f;
+        constexpr float playlist_h = 400.0f;
 
         const float avail_w = ImGui::GetContentRegionAvail().x;
         const float total_panels_w = widget_w + 24.0f + playlist_w;
@@ -253,20 +253,6 @@ int main(int argc, char* argv[]) {
             if (ImGui::Button(net_label, ImVec2(115.0f, 34.0f))) {
                 display_model.toggle_connectivity();
             }
-
-            // Keyboard Controls Reference
-            ImGui::Spacing();
-            ImGui::Spacing();
-
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.58f, 1.0f));
-            ImGui::TextDisabled("KEYBOARD SHORTCUTS:");
-            ImGui::BulletText("Space: Play / Pause");
-            ImGui::BulletText("S: Toggle Shuffle   |   R: Toggle Repeat");
-            ImGui::BulletText("N / PageDown: Next  |   P / PageUp: Previous Track");
-            ImGui::BulletText("1 - 9: Jump to Track 1-9   |   0: Jump to Track 10");
-            ImGui::BulletText("C: Toggle Network Connectivity (simulates online / offline)");
-            ImGui::BulletText("Q / F10: Quit Application");
-            ImGui::PopStyleColor();
         }
         ImGui::EndGroup();
 
