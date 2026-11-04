@@ -28,7 +28,7 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     const float widget_width = (user_size.x >= 680.0f) ? user_size.x : 680.0f;
-    const float widget_height = (user_size.y > 0.0f) ? user_size.y : 380.0f;
+    const float widget_height = (user_size.y > 0.0f) ? user_size.y : 480.0f;
 
     const ImVec2 screen_pos = ImGui::GetCursorScreenPos();
     const ImVec2 display_end(screen_pos.x + widget_width, screen_pos.y + widget_height);
@@ -132,17 +132,18 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     ImGui::PushFont(nullptr, 16.5f);
 
     ImGui::BeginChild("TrackListChild", ImVec2(list_w, list_h), false,
-                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysVerticalScrollbar);
+                      ImGuiWindowFlags_NoMove);
 
     ImDrawList* child_draw_list = ImGui::GetWindowDrawList();
     const int current_track_num = model.current_track_number();
     const float track_text_h = ImGui::GetTextLineHeight();
     const float item_h = std::max(27.0f, track_text_h + 8.0f);
+    const float avail_w = ImGui::GetContentRegionAvail().x;
 
     for (const auto& track : model.tracks()) {
         const bool is_active = (track.number == current_track_num);
         const ImVec2 row_pos = ImGui::GetCursorScreenPos();
-        const ImVec2 row_size(list_w - 18.0f, item_h);
+        const ImVec2 row_size(avail_w, item_h);
         const ImVec2 row_end(row_pos.x + row_size.x, row_pos.y + row_size.y);
 
         // Invisible button for row interaction / clicking

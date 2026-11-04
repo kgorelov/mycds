@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     const SDL_WindowFlags window_flags = SDL_WINDOW_OPENGL |
                                          SDL_WINDOW_RESIZABLE |
                                          SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    SDL_Window* window = SDL_CreateWindow("MyCDs", 1460, 500, window_flags);
+    SDL_Window* window = SDL_CreateWindow("MyCDs", 1460, 560, window_flags);
     if (!window) {
         std::cerr << "Failed to create SDL window: " << SDL_GetError() << '\n';
         SDL_Quit();
@@ -194,7 +194,7 @@ int main(int argc, char* argv[]) {
         constexpr float widget_w = 680.0f;
         constexpr float widget_h = 250.0f;
         constexpr float playlist_w = 680.0f;
-        constexpr float playlist_h = 400.0f;
+        constexpr float playlist_h = 480.0f;
 
         const float avail_w = ImGui::GetContentRegionAvail().x;
         const float total_panels_w = widget_w + 24.0f + playlist_w;
