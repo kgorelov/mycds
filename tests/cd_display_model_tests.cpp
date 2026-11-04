@@ -139,3 +139,78 @@ TEST(CdDisplayModelTests, JumpToTrackAndPlaylistInfo) {
     model.jump_to_track(99);
     EXPECT_EQ(model.current_track_number(), 10);
 }
+
+TEST(CdDisplayModelTests, VolumeLevelsInitialStateAndDynamicTicking) {
+    CdDisplayModel model;
+
+    EXPECT_DOUBLE_EQ(model.left_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.left_peak(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_peak(), 0.0);
+
+    model.update(0.1);
+    EXPECT_GT(model.left_level(), 0.0);
+    EXPECT_GT(model.right_level(), 0.0);
+    EXPECT_LE(model.left_level(), 1.0);
+    EXPECT_LE(model.right_level(), 1.0);
+    EXPECT_GE(model.left_peak(), model.left_level());
+    EXPECT_GE(model.right_peak(), model.right_level());
+}
+
+TEST(CdDisplayModelTests, VolumeLevelsEmptyWhenPaused) {
+    CdDisplayModel model;
+
+    model.update(0.5);
+    EXPECT_GT(model.left_level(), 0.0);
+    EXPECT_GT(model.right_level(), 0.0);
+
+    // Pause playback: must become immediately empty (all segments unlit)
+    model.pause();
+    EXPECT_FALSE(model.is_playing());
+    EXPECT_DOUBLE_EQ(model.left_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.left_peak(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_peak(), 0.0);
+
+    // Further updates while paused must keep levels at 0.0
+    model.update(1.0);
+    EXPECT_DOUBLE_EQ(model.left_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.left_peak(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_peak(), 0.0);
+
+    // Unpause / resume: levels should resume animating
+    model.toggle_play_pause();
+    EXPECT_TRUE(model.is_playing());
+    model.update(0.1);
+    EXPECT_GT(model.left_level(), 0.0);
+    EXPECT_GT(model.right_level(), 0.0);
+
+    // Toggle pause: must immediately clear levels
+    model.toggle_play_pause();
+    EXPECT_FALSE(model.is_playing());
+    EXPECT_DOUBLE_EQ(model.left_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_level(), 0.0);
+}
+
+TEST(CdDisplayModelTests, VolumeLevelsStereoVariationAndPeakHold) {
+    CdDisplayModel model;
+
+    // Run for several ticks and collect metrics
+    bool saw_stereo_difference = false;
+    for (int i = 0; i < 40; ++i) {
+        model.update(0.05);
+        EXPECT_GE(model.left_level(), 0.0);
+        EXPECT_LE(model.left_level(), 1.0);
+        EXPECT_GE(model.right_level(), 0.0);
+        EXPECT_LE(model.right_level(), 1.0);
+        EXPECT_GE(model.left_peak(), model.left_level());
+        EXPECT_GE(model.right_peak(), model.right_level());
+
+        if (std::abs(model.left_level() - model.right_level()) > 0.005) {
+            saw_stereo_difference = true;
+        }
+    }
+
+    EXPECT_TRUE(saw_stereo_difference);
+}

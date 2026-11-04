@@ -43,5 +43,7 @@ A list, pretty sparse. Track number, track name
 
 
 ### Phase 2.3 - LED volume indicator
-Square LEDs, red, yellow and green. Like on the old recorders.
+Square LEDs: red, yellow and green. Like on the old recorders.
+Should be placed under the main CD display.
+In the prototype simulation it should behave as if the music was playing (when not paused), when paused - empty (all segments not lit).
 

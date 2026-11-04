@@ -6,6 +6,7 @@
 #include "cd_display_model.h"
 #include "cd_display_widget.h"
 #include "cd_playlist_widget.h"
+#include "cd_volume_meter_widget.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
@@ -32,7 +33,7 @@ int main(int argc, char* argv[]) {
     const SDL_WindowFlags window_flags = SDL_WINDOW_OPENGL |
                                          SDL_WINDOW_RESIZABLE |
                                          SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    SDL_Window* window = SDL_CreateWindow("MyCDs", 1460, 680, window_flags);
+    SDL_Window* window = SDL_CreateWindow("MyCDs", 1460, 720, window_flags);
     if (!window) {
         std::cerr << "Failed to create SDL window: " << SDL_GetError() << '\n';
         SDL_Quit();
@@ -193,7 +194,7 @@ int main(int argc, char* argv[]) {
         constexpr float widget_w = 680.0f;
         constexpr float widget_h = 250.0f;
         constexpr float playlist_w = 680.0f;
-        constexpr float playlist_h = 420.0f;
+        constexpr float playlist_h = 440.0f;
 
         const float avail_w = ImGui::GetContentRegionAvail().x;
         const float total_panels_w = widget_w + 24.0f + playlist_w;
@@ -209,8 +210,8 @@ int main(int argc, char* argv[]) {
             // Phase 2.1: CD Player Display Widget
             mycds::gui::RenderCdDisplay(display_model, ImVec2(widget_w, widget_h));
 
-            // Space left underneath the main CD display for future widgets (e.g. Phase 2.3 LED volume indicator)
-            ImGui::Dummy(ImVec2(widget_w, 28.0f));
+            // Phase 2.3: LED volume indicator
+            mycds::gui::RenderCdVolumeMeter(display_model, ImVec2(widget_w, 90.0f));
 
             // Transport Controls Bar
             const ImVec2 btn_size(90.0f, 34.0f);

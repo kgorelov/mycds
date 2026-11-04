@@ -1,5 +1,6 @@
 #include "cd_display_model.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -39,6 +40,86 @@ void CdDisplayModel::update(double delta_time_seconds) {
             }
         }
     }
+
+    if (!playing_ || tracks_.empty()) {
+        reset_volume_levels();
+    } else {
+        // Audio synthesis simulation for volume meter
+        const double t = uptime_seconds_;
+
+        // Rhythmic beat pulses (~124 bpm)
+        constexpr double bpm = 124.0;
+        constexpr double beat_freq = bpm / 60.0;
+        const double beat_phase = std::fmod(t * beat_freq, 1.0);
+        const double kick = std::exp(-beat_phase * 6.5);
+
+        const double snare_phase = std::fmod((t * beat_freq) + 0.5, 1.0);
+        const double snare = (snare_phase < 0.3) ? (std::exp(-snare_phase * 11.0) * 0.75) : 0.0;
+
+        const double bassline = 0.5 + 0.5 * std::sin(t * 3.7);
+        const double lead = 0.5 + 0.5 * std::sin(t * 1.9 + 1.2);
+        const double hihat = 0.5 + 0.5 * std::sin(t * 19.0) * std::cos(t * 8.0);
+
+        // Musical section dynamics (verse / chorus intensity variations)
+        const double macro = 0.74 + 0.20 * std::sin(t * 0.16) + 0.06 * std::cos(t * 0.05);
+
+        const double raw = (0.42 * kick + 0.26 * snare + 0.14 * bassline + 0.12 * lead + 0.06 * hihat) * macro;
+
+        // Stereo panning / decorrelation
+        const double pan_l = 0.5 + 0.35 * std::sin(t * 1.15 + 0.6);
+        const double pan_r = 0.5 + 0.35 * std::cos(t * 1.35 + 0.3);
+
+        const double target_left = std::clamp(raw * (0.8 + 0.4 * pan_l), 0.06, 0.98);
+        const double target_right = std::clamp(raw * (0.8 + 0.4 * pan_r), 0.06, 0.98);
+
+        // VU meter ballistics: fast attack (~32.0/s), smooth decay (~7.5/s)
+        constexpr double attack_rate = 32.0;
+        constexpr double decay_rate = 7.5;
+
+        // Left channel
+        if (target_left > volume_levels_.left) {
+            volume_levels_.left += (target_left - volume_levels_.left) * std::min(1.0, delta_time_seconds * attack_rate);
+        } else {
+            volume_levels_.left += (target_left - volume_levels_.left) * std::min(1.0, delta_time_seconds * decay_rate);
+        }
+
+        // Right channel
+        if (target_right > volume_levels_.right) {
+            volume_levels_.right += (target_right - volume_levels_.right) * std::min(1.0, delta_time_seconds * attack_rate);
+        } else {
+            volume_levels_.right += (target_right - volume_levels_.right) * std::min(1.0, delta_time_seconds * decay_rate);
+        }
+
+        // Peak hold ballistics
+        if (volume_levels_.left >= volume_levels_.left_peak) {
+            volume_levels_.left_peak = volume_levels_.left;
+            left_peak_timer_ = 0.8;
+        } else {
+            if (left_peak_timer_ > 0.0) {
+                left_peak_timer_ -= delta_time_seconds;
+            } else {
+                volume_levels_.left_peak = std::max(volume_levels_.left,
+                                                    volume_levels_.left_peak - delta_time_seconds * 0.8);
+            }
+        }
+
+        if (volume_levels_.right >= volume_levels_.right_peak) {
+            volume_levels_.right_peak = volume_levels_.right;
+            right_peak_timer_ = 0.8;
+        } else {
+            if (right_peak_timer_ > 0.0) {
+                right_peak_timer_ -= delta_time_seconds;
+            } else {
+                volume_levels_.right_peak = std::max(volume_levels_.right,
+                                                     volume_levels_.right_peak - delta_time_seconds * 0.8);
+            }
+        }
+
+        volume_levels_.left = std::clamp(volume_levels_.left, 0.0, 1.0);
+        volume_levels_.right = std::clamp(volume_levels_.right, 0.0, 1.0);
+        volume_levels_.left_peak = std::clamp(volume_levels_.left_peak, 0.0, 1.0);
+        volume_levels_.right_peak = std::clamp(volume_levels_.right_peak, 0.0, 1.0);
+    }
 }
 
 void CdDisplayModel::play() {
@@ -47,10 +128,14 @@ void CdDisplayModel::play() {
 
 void CdDisplayModel::pause() {
     playing_ = false;
+    reset_volume_levels();
 }
 
 void CdDisplayModel::toggle_play_pause() {
     playing_ = !playing_;
+    if (!playing_) {
+        reset_volume_levels();
+    }
 }
 
 void CdDisplayModel::toggle_shuffle() {
@@ -91,6 +176,7 @@ void CdDisplayModel::next_track() {
             current_track_index_ = 0;
             if (repeat_mode_ == RepeatMode::Off) {
                 playing_ = false;
+                reset_volume_levels();
             }
         }
     }
@@ -198,6 +284,32 @@ bool CdDisplayModel::is_cloud_active() const {
 
 bool CdDisplayModel::is_cddb_active() const {
     return uptime_seconds_ >= 3.0;
+}
+
+VolumeLevels CdDisplayModel::volume_levels() const {
+    return volume_levels_;
+}
+
+double CdDisplayModel::left_level() const {
+    return volume_levels_.left;
+}
+
+double CdDisplayModel::right_level() const {
+    return volume_levels_.right;
+}
+
+double CdDisplayModel::left_peak() const {
+    return volume_levels_.left_peak;
+}
+
+double CdDisplayModel::right_peak() const {
+    return volume_levels_.right_peak;
+}
+
+void CdDisplayModel::reset_volume_levels() {
+    volume_levels_ = {0.0, 0.0, 0.0, 0.0};
+    left_peak_timer_ = 0.0;
+    right_peak_timer_ = 0.0;
 }
 
 } // namespace mycds::gui

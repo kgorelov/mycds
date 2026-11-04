@@ -23,6 +23,13 @@ struct TrackInfo {
     std::string title;
 };
 
+struct VolumeLevels {
+    double left{0.0};
+    double right{0.0};
+    double left_peak{0.0};
+    double right_peak{0.0};
+};
+
 class CdDisplayModel {
 public:
     CdDisplayModel();
@@ -63,6 +70,13 @@ public:
     [[nodiscard]] bool is_cloud_active() const;
     [[nodiscard]] bool is_cddb_active() const;
 
+    [[nodiscard]] VolumeLevels volume_levels() const;
+    [[nodiscard]] double left_level() const;
+    [[nodiscard]] double right_level() const;
+    [[nodiscard]] double left_peak() const;
+    [[nodiscard]] double right_peak() const;
+    void reset_volume_levels();
+
 private:
     std::vector<TrackInfo> tracks_;
     size_t current_track_index_{0};
@@ -72,6 +86,9 @@ private:
     bool shuffle_{false};
     RepeatMode repeat_mode_{RepeatMode::Off};
     ConnectivityStatus connectivity_{ConnectivityStatus::Connected};
+    VolumeLevels volume_levels_{};
+    double left_peak_timer_{0.0};
+    double right_peak_timer_{0.0};
 };
 
 } // namespace mycds::gui
