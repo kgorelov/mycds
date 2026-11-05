@@ -143,8 +143,9 @@ bool CdBrushedMetal::Initialize(int width, int height) {
         Shutdown();
     }
 
-    width_ = width;
-    height_ = height;
+    // Oversized buffer (at least 2560x1440) ensures smooth, seamless resizing with zero regenerations
+    width_ = std::max(width, kDefaultMinCapacityWidth);
+    height_ = std::max(height, kDefaultMinCapacityHeight);
 
     const std::vector<RgbaPixel> pixels = GeneratePixels(width_, height_);
     if (pixels.empty()) {
@@ -152,29 +153,30 @@ bool CdBrushedMetal::Initialize(int width, int height) {
     }
 
     glGenTextures(1, &texture_id_);
-    if (texture_id_ == 0) {
-        return false;
+    if (texture_id_ != 0) {
+        glBindTexture(GL_TEXTURE_2D, texture_id_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width_, height_, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    glBindTexture(GL_TEXTURE_2D, texture_id_);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width_, height_, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-
+    initialized_ = true;
     return true;
 }
 
-bool CdBrushedMetal::UpdateSize(int width, int height) {
-    if (width <= 0 || height <= 0) {
+bool CdBrushedMetal::EnsureCapacity(int required_width, int required_height) {
+    if (required_width <= 0 || required_height <= 0) {
         return false;
     }
-    if (texture_id_ != 0 && width_ == width && height_ == height) {
+    if (initialized_ && width_ >= required_width && height_ >= required_height) {
         return true;
     }
-    return Initialize(width, height);
+    const int new_w = std::max(required_width, width_ > 0 ? width_ * 2 : kDefaultMinCapacityWidth);
+    const int new_h = std::max(required_height, height_ > 0 ? height_ * 2 : kDefaultMinCapacityHeight);
+    return Initialize(new_w, new_h);
 }
 
 void CdBrushedMetal::Shutdown() {
@@ -182,6 +184,7 @@ void CdBrushedMetal::Shutdown() {
         glDeleteTextures(1, &texture_id_);
         texture_id_ = 0;
     }
+    initialized_ = false;
     width_ = 0;
     height_ = 0;
 }
@@ -239,8 +242,11 @@ void CdBrushedMetal::RenderBackground(ImDrawList* draw_list, const ImVec2& scree
     const ImVec2 max_pos(screen_pos.x + screen_size.x, screen_pos.y + screen_size.y);
 
     if (texture_id_ != 0 && width_ > 0 && height_ > 0) {
-        // Map texture 1:1 across the full background from (0,0) to (1,1)
-        draw_list->AddImage(GetTextureRef(), screen_pos, max_pos, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f));
+        // Sample corresponding sub-region of oversized texture (never exceeds 1.0)
+        const ImVec2 uv0(0.0f, 0.0f);
+        const ImVec2 uv1(std::clamp(screen_size.x / static_cast<float>(width_), 0.0f, 1.0f),
+                         std::clamp(screen_size.y / static_cast<float>(height_), 0.0f, 1.0f));
+        draw_list->AddImage(GetTextureRef(), screen_pos, max_pos, uv0, uv1);
     } else {
         draw_list->AddRectFilled(screen_pos, max_pos, IM_COL32(28, 28, 32, 255));
     }

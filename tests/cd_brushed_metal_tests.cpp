@@ -99,9 +99,22 @@ TEST(CdBrushedMetalTests, NullDrawListSafety) {
     metal.RenderChassisBolt(nullptr, ImVec2(50, 50), 7.0f);
 }
 
-TEST(CdBrushedMetalTests, UpdateSizeInvalidDimensionsReturnsFalse) {
+TEST(CdBrushedMetalTests, EnsureCapacityAndOversizedAllocation) {
     CdBrushedMetal metal;
-    EXPECT_FALSE(metal.UpdateSize(0, 100));
-    EXPECT_FALSE(metal.UpdateSize(100, 0));
-    EXPECT_FALSE(metal.UpdateSize(-1, -1));
+    EXPECT_FALSE(metal.EnsureCapacity(0, 100));
+    EXPECT_FALSE(metal.EnsureCapacity(100, 0));
+    EXPECT_FALSE(metal.EnsureCapacity(-1, -1));
+
+    // Initial allocation allocates at least kDefaultMinCapacityWidth x kDefaultMinCapacityHeight (2560x1440)
+    EXPECT_TRUE(metal.EnsureCapacity(1460, 560));
+    EXPECT_GE(metal.GetWidth(), CdBrushedMetal::kDefaultMinCapacityWidth);
+    EXPECT_GE(metal.GetHeight(), CdBrushedMetal::kDefaultMinCapacityHeight);
+
+    const int cap_w = metal.GetWidth();
+    const int cap_h = metal.GetHeight();
+
+    // Resizing to dimensions within existing capacity requires no re-allocation
+    EXPECT_TRUE(metal.EnsureCapacity(1600, 800));
+    EXPECT_EQ(metal.GetWidth(), cap_w);
+    EXPECT_EQ(metal.GetHeight(), cap_h);
 }

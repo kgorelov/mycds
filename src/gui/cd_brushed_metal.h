@@ -17,6 +17,9 @@ struct RgbaPixel {
 
 class CdBrushedMetal {
 public:
+    static constexpr int kDefaultMinCapacityWidth = 2560;
+    static constexpr int kDefaultMinCapacityHeight = 1440;
+
     CdBrushedMetal() = default;
     ~CdBrushedMetal();
 
@@ -26,11 +29,16 @@ public:
     bool Initialize(int width, int height);
     void Shutdown();
 
-    // Ensure texture matches target width and height.
-    // Only regenerates texture on initial load and when window dimensions change.
-    bool UpdateSize(int width, int height);
+    // Ensure texture has at least required_width x required_height capacity.
+    // If current capacity is sufficient, returns true immediately with zero work.
+    // Generates oversized texture (>= 2560x1440) so window resizing requires no regenerations.
+    bool EnsureCapacity(int required_width, int required_height);
 
-    bool IsInitialized() const { return texture_id_ != 0; }
+    bool UpdateSize(int required_width, int required_height) {
+        return EnsureCapacity(required_width, required_height);
+    }
+
+    bool IsInitialized() const { return initialized_; }
     int GetWidth() const { return width_; }
     int GetHeight() const { return height_; }
     GLuint GetTextureId() const { return texture_id_; }
@@ -46,6 +54,7 @@ private:
     GLuint texture_id_{0};
     int width_{0};
     int height_{0};
+    bool initialized_{false};
 };
 
 CdBrushedMetal& GetBrushedMetal();
