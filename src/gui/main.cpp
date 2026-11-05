@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
     const SDL_WindowFlags window_flags = SDL_WINDOW_OPENGL |
                                          SDL_WINDOW_RESIZABLE |
                                          SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    SDL_Window* window = SDL_CreateWindow("MyCDs", 1460, 560, window_flags);
+    SDL_Window* window = SDL_CreateWindow("MyCDs", 1460, 532, window_flags);
     if (!window) {
         std::cerr << "Failed to create SDL window: " << SDL_GetError() << '\n';
         SDL_Quit();
