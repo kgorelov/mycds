@@ -23,10 +23,16 @@ public:
     CdBrushedMetal(const CdBrushedMetal&) = delete;
     CdBrushedMetal& operator=(const CdBrushedMetal&) = delete;
 
-    bool Initialize(int width = 1024, int height = 512);
+    bool Initialize(int width, int height);
     void Shutdown();
 
+    // Ensure texture matches target width and height.
+    // Only regenerates texture on initial load and when window dimensions change.
+    bool UpdateSize(int width, int height);
+
     bool IsInitialized() const { return texture_id_ != 0; }
+    int GetWidth() const { return width_; }
+    int GetHeight() const { return height_; }
     GLuint GetTextureId() const { return texture_id_; }
     ImTextureRef GetTextureRef() const;
 

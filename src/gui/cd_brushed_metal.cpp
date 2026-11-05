@@ -135,6 +135,10 @@ std::vector<RgbaPixel> CdBrushedMetal::GeneratePixels(int width, int height, uin
 }
 
 bool CdBrushedMetal::Initialize(int width, int height) {
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
     if (texture_id_ != 0) {
         Shutdown();
     }
@@ -155,12 +159,22 @@ bool CdBrushedMetal::Initialize(int width, int height) {
     glBindTexture(GL_TEXTURE_2D, texture_id_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width_, height_, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
     glBindTexture(GL_TEXTURE_2D, 0);
 
     return true;
+}
+
+bool CdBrushedMetal::UpdateSize(int width, int height) {
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+    if (texture_id_ != 0 && width_ == width && height_ == height) {
+        return true;
+    }
+    return Initialize(width, height);
 }
 
 void CdBrushedMetal::Shutdown() {
@@ -197,12 +211,20 @@ void CdBrushedMetal::RenderChassisBolt(ImDrawList* draw_list, const ImVec2& cent
     draw_list->PathArcTo(center, radius - 0.5f, 0.3f, 2.1f, 12);
     draw_list->PathStroke(IM_COL32(18, 18, 22, 220), 0, 1.2f);
 
-    // Recessed hex socket
+    // Recessed hex socket with precalculated unit offsets
     const float r_hex = radius * 0.48f;
+    static const ImVec2 kHexUnitOffsets[6] = {
+        ImVec2(std::cos(0.0f * (kPi / 3.0f) + (kPi / 6.0f)), std::sin(0.0f * (kPi / 3.0f) + (kPi / 6.0f))),
+        ImVec2(std::cos(1.0f * (kPi / 3.0f) + (kPi / 6.0f)), std::sin(1.0f * (kPi / 3.0f) + (kPi / 6.0f))),
+        ImVec2(std::cos(2.0f * (kPi / 3.0f) + (kPi / 6.0f)), std::sin(2.0f * (kPi / 3.0f) + (kPi / 6.0f))),
+        ImVec2(std::cos(3.0f * (kPi / 3.0f) + (kPi / 6.0f)), std::sin(3.0f * (kPi / 3.0f) + (kPi / 6.0f))),
+        ImVec2(std::cos(4.0f * (kPi / 3.0f) + (kPi / 6.0f)), std::sin(4.0f * (kPi / 3.0f) + (kPi / 6.0f))),
+        ImVec2(std::cos(5.0f * (kPi / 3.0f) + (kPi / 6.0f)), std::sin(5.0f * (kPi / 3.0f) + (kPi / 6.0f)))
+    };
+
     ImVec2 hex_pts[6];
     for (int i = 0; i < 6; ++i) {
-        const float angle = static_cast<float>(i) * (kPi / 3.0f) + (kPi / 6.0f);
-        hex_pts[i] = ImVec2(center.x + r_hex * std::cos(angle), center.y + r_hex * std::sin(angle));
+        hex_pts[i] = ImVec2(center.x + r_hex * kHexUnitOffsets[i].x, center.y + r_hex * kHexUnitOffsets[i].y);
     }
     draw_list->AddConvexPolyFilled(hex_pts, 6, IM_COL32(10, 10, 12, 255));
     draw_list->AddPolyline(hex_pts, 6, IM_COL32(24, 24, 28, 255), ImDrawFlags_Closed, 1.0f);
@@ -217,11 +239,8 @@ void CdBrushedMetal::RenderBackground(ImDrawList* draw_list, const ImVec2& scree
     const ImVec2 max_pos(screen_pos.x + screen_size.x, screen_pos.y + screen_size.y);
 
     if (texture_id_ != 0 && width_ > 0 && height_ > 0) {
-        const ImVec2 uv0(screen_pos.x / static_cast<float>(width_),
-                         screen_pos.y / static_cast<float>(height_));
-        const ImVec2 uv1(max_pos.x / static_cast<float>(width_),
-                         max_pos.y / static_cast<float>(height_));
-        draw_list->AddImage(GetTextureRef(), screen_pos, max_pos, uv0, uv1);
+        // Map texture 1:1 across the full background from (0,0) to (1,1)
+        draw_list->AddImage(GetTextureRef(), screen_pos, max_pos, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f));
     } else {
         draw_list->AddRectFilled(screen_pos, max_pos, IM_COL32(28, 28, 32, 255));
     }
@@ -274,18 +293,10 @@ void CdBrushedMetal::RenderPanelChassis(ImDrawList* draw_list, const ImVec2& min
         return;
     }
 
-    if (texture_id_ != 0 && width_ > 0 && height_ > 0) {
-        const ImVec2 uv0(min_pos.x / static_cast<float>(width_),
-                         min_pos.y / static_cast<float>(height_));
-        const ImVec2 uv1(max_pos.x / static_cast<float>(width_),
-                         max_pos.y / static_cast<float>(height_));
-        draw_list->AddImageRounded(GetTextureRef(), min_pos, max_pos, uv0, uv1, IM_COL32_WHITE, rounding);
-    } else {
-        draw_list->AddRectFilled(min_pos, max_pos, IM_COL32(28, 28, 32, 255), rounding);
-    }
-
-    // Subtle dark tint and recessed perimeter shadow so the panel has tactile depth on the faceplate
-    draw_list->AddRectFilled(min_pos, max_pos, IM_COL32(0, 0, 0, 35), rounding);
+    // The brushed metal background spans the entire window faceplate. The panel modules
+    // sit seamlessly on this surface; a subtle recess tint and milled bezel create
+    // authentic physical modular depth without redundant texture redraws or state changes.
+    draw_list->AddRectFilled(min_pos, max_pos, IM_COL32(0, 0, 0, 32), rounding);
 
     // Outer precision-milled metallic bezel
     draw_list->AddRect(min_pos, max_pos, IM_COL32(52, 54, 60, 255), rounding, 0, 1.5f);

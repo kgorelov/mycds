@@ -98,3 +98,10 @@ TEST(CdBrushedMetalTests, NullDrawListSafety) {
     metal.RenderPanelChassis(nullptr, ImVec2(0, 0), ImVec2(100, 100));
     metal.RenderChassisBolt(nullptr, ImVec2(50, 50), 7.0f);
 }
+
+TEST(CdBrushedMetalTests, UpdateSizeInvalidDimensionsReturnsFalse) {
+    CdBrushedMetal metal;
+    EXPECT_FALSE(metal.UpdateSize(0, 100));
+    EXPECT_FALSE(metal.UpdateSize(100, 0));
+    EXPECT_FALSE(metal.UpdateSize(-1, -1));
+}
