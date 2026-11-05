@@ -6,6 +6,8 @@
 #include <cstdio>
 #include <string>
 
+#include "cd_brushed_metal.h"
+
 namespace mycds::gui {
 
 namespace {
@@ -37,8 +39,7 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     ImGui::Dummy(ImVec2(widget_width, widget_height));
 
     // Outer Chassis Frame
-    draw_list->AddRectFilled(screen_pos, display_end, kChassisFrame, 10.0f);
-    draw_list->AddRect(screen_pos, display_end, kBezelLight, 10.0f, 0, 1.5f);
+    GetBrushedMetal().RenderPanelChassis(draw_list, screen_pos, display_end, 10.0f);
 
     // Corner screw accents
     auto draw_screw = [&](ImVec2 pos) {

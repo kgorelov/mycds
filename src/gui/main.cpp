@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
 
+#include "cd_brushed_metal.h"
 #include "cd_display_model.h"
 #include "cd_display_widget.h"
 #include "cd_playlist_widget.h"
@@ -81,6 +82,10 @@ int main(int argc, char* argv[]) {
         SDL_DestroyWindow(window);
         SDL_Quit();
         return 1;
+    }
+
+    if (!mycds::gui::GetBrushedMetal().Initialize(1024, 512)) {
+        std::cerr << "Warning: Failed to initialize brushed metal texture\n";
     }
 
     mycds::gui::CdDisplayModel display_model;
@@ -187,9 +192,16 @@ int main(int argc, char* argv[]) {
             ImGuiWindowFlags_NoBringToFrontOnFocus;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 20.0f));
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.10f, 0.12f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 
         ImGui::Begin("MyCDsMainWindow", nullptr, host_window_flags);
+
+        // Dark brushed metal faceplate background
+        mycds::gui::GetBrushedMetal().RenderBackground(
+            ImGui::GetWindowDrawList(),
+            viewport->WorkPos,
+            viewport->WorkSize
+        );
 
         constexpr float widget_w = 680.0f;
         constexpr float widget_h = 250.0f;
@@ -215,6 +227,13 @@ int main(int argc, char* argv[]) {
 
             // Transport Controls Bar
             const ImVec2 btn_size(90.0f, 34.0f);
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.18f, 0.21f, 0.90f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.27f, 0.31f, 0.95f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.13f, 0.13f, 0.15f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.38f, 0.40f, 0.46f, 0.75f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
 
             if (ImGui::Button("|<< Prev", btn_size)) {
                 display_model.prev_track();
@@ -253,6 +272,9 @@ int main(int argc, char* argv[]) {
             if (ImGui::Button(net_label, ImVec2(115.0f, 34.0f))) {
                 display_model.toggle_connectivity();
             }
+
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(4);
         }
         ImGui::EndGroup();
 
@@ -283,6 +305,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Cleanup
+    mycds::gui::GetBrushedMetal().Shutdown();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
