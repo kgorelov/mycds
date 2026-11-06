@@ -84,10 +84,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    int init_w = 0;
-    int init_h = 0;
-    SDL_GetWindowSizeInPixels(window, &init_w, &init_h);
-    if (!mycds::gui::GetBrushedMetal().Initialize(init_w > 0 ? init_w : 1460, init_h > 0 ? init_h : 560)) {
+    if (!mycds::gui::GetBrushedMetal().Initialize(mycds::gui::CdBrushedMetal::kDefaultTileSize,
+                                                  mycds::gui::CdBrushedMetal::kDefaultTileSize)) {
         std::cerr << "Warning: Failed to initialize brushed metal texture\n";
     }
 
@@ -199,12 +197,7 @@ int main(int argc, char* argv[]) {
 
         ImGui::Begin("MyCDsMainWindow", nullptr, host_window_flags);
 
-        // Ensure brushed metal texture matches current window size (only regenerates when resized)
-        const int cur_w = static_cast<int>(viewport->WorkSize.x);
-        const int cur_h = static_cast<int>(viewport->WorkSize.y);
-        mycds::gui::GetBrushedMetal().UpdateSize(cur_w, cur_h);
-
-        // Dark brushed metal faceplate background
+        // Dark brushed metal faceplate background (rendered with small symmetric tiles)
         mycds::gui::GetBrushedMetal().RenderBackground(
             ImGui::GetWindowDrawList(),
             viewport->WorkPos,

@@ -11,7 +11,6 @@ namespace {
 
 CdBrushedMetal g_brushed_metal_instance;
 
-constexpr float kTwoPi = 6.28318530717958647692f;
 constexpr float kPi = 3.14159265358979323846f;
 
 float Smoothstep(float t) {
@@ -37,101 +36,103 @@ std::vector<RgbaPixel> CdBrushedMetal::GeneratePixels(int width, int height, uin
         return static_cast<float>(state) / 4294967296.0f;
     };
 
-    // 1. Periodic vertical row baseline roughness
-    constexpr int kKy = 32;
-    std::vector<float> grid_y(kKy);
-    for (int k = 0; k < kKy; ++k) {
-        grid_y[k] = (lcg() - 0.5f) * 11.0f;
-    }
+    const int half_y = (height + 1) / 2;
+    const int half_x = (width + 1) / 2;
 
+    // 1. Symmetric row baseline roughness
     std::vector<float> row_base(height);
-    const float step_y = static_cast<float>(height) / static_cast<float>(kKy);
-    for (int y = 0; y < height; ++y) {
-        const float pos_y = static_cast<float>(y) / step_y;
-        const int k0 = static_cast<int>(pos_y) % kKy;
-        const int k1 = (k0 + 1) % kKy;
-        const float t = pos_y - std::floor(pos_y);
-        row_base[y] = (1.0f - Smoothstep(t)) * grid_y[k0] + Smoothstep(t) * grid_y[k1];
+    for (int y = 0; y < half_y; ++y) {
+        const float val = (lcg() - 0.5f) * 9.0f;
+        row_base[y] = val;
+        row_base[height - 1 - y] = val;
     }
 
-    // 2. Grids for horizontal streaks of 3 scales (seamlessly periodic along X)
-    constexpr int kK1 = 8;
-    constexpr int kK2 = 16;
-    constexpr int kK3 = 32;
+    // 2. Symmetric horizontal streak grids
+    constexpr int kK1 = 4;
+    constexpr int kK2 = 8;
+    constexpr int kK3 = 16;
 
-    std::vector<float> g1(height * kK1);
-    std::vector<float> g2(height * kK2);
-    std::vector<float> g3(height * kK3);
+    std::vector<float> g1(half_y * kK1);
+    std::vector<float> g2(half_y * kK2);
+    std::vector<float> g3(half_y * kK3);
 
-    for (int y = 0; y < height; ++y) {
+    for (int y = 0; y < half_y; ++y) {
         for (int k = 0; k < kK1; ++k) {
-            g1[y * kK1 + k] = (lcg() - 0.5f) * 10.0f;
+            g1[y * kK1 + k] = (lcg() - 0.5f) * 8.0f;
         }
         for (int k = 0; k < kK2; ++k) {
-            g2[y * kK2 + k] = (lcg() - 0.5f) * 7.5f;
+            g2[y * kK2 + k] = (lcg() - 0.5f) * 6.0f;
         }
         for (int k = 0; k < kK3; ++k) {
-            g3[y * kK3 + k] = (lcg() - 0.5f) * 5.0f;
+            g3[y * kK3 + k] = (lcg() - 0.5f) * 4.0f;
         }
     }
 
-    // 3. High-frequency micro-scratches buffer (filtered horizontally with periodic wrap)
-    std::vector<float> micro(height * width);
-    std::vector<float> row_scratch(width);
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            row_scratch[x] = (lcg() - 0.5f) * 8.0f;
+    // 3. Symmetric micro-grain buffer
+    std::vector<float> micro_half(half_y * half_x);
+    for (int y = 0; y < half_y; ++y) {
+        std::vector<float> raw(half_x);
+        for (int x = 0; x < half_x; ++x) {
+            raw[x] = (lcg() - 0.5f) * 7.0f;
         }
-        for (int x = 0; x < width; ++x) {
-            const int prev_x = (x - 1 + width) % width;
-            const int next_x = (x + 1) % width;
-            micro[y * width + x] = 0.25f * row_scratch[prev_x] + 0.50f * row_scratch[x] + 0.25f * row_scratch[next_x];
+        for (int x = 0; x < half_x; ++x) {
+            const int prev_x = std::max(0, x - 1);
+            const int next_x = std::min(half_x - 1, x + 1);
+            micro_half[y * half_x + x] = 0.25f * raw[prev_x] + 0.50f * raw[x] + 0.25f * raw[next_x];
         }
     }
 
-    // 4. Anisotropic specular highlight across width (seamlessly periodic)
+    // 4. Symmetric specular highlight
     std::vector<float> specular(width);
-    for (int x = 0; x < width; ++x) {
-        const float phi = (static_cast<float>(x) / static_cast<float>(width)) * kTwoPi;
-        specular[x] = std::sin(phi - 0.4f) * 3.5f +
-                      std::sin(2.0f * phi + 1.2f) * 4.0f +
-                      std::cos(3.0f * phi) * 1.8f;
+    for (int x = 0; x < half_x; ++x) {
+        const float phi = (static_cast<float>(x) / static_cast<float>(half_x)) * kPi;
+        const float val = std::sin(phi) * 3.0f + std::sin(2.0f * phi) * 1.5f;
+        specular[x] = val;
+        specular[width - 1 - x] = val;
     }
 
-    // 5. Evaluate all pixels
+    // 5. Evaluate half-quadrant and mirror symmetrically to all 4 quadrants
     constexpr float kBaseLum = 28.0f;
-    for (int y = 0; y < height; ++y) {
+    for (int y = 0; y < half_y; ++y) {
         const float r_b = row_base[y];
         const float* row_g1 = &g1[y * kK1];
         const float* row_g2 = &g2[y * kK2];
         const float* row_g3 = &g3[y * kK3];
-        const float* row_micro = &micro[y * width];
-        RgbaPixel* out_row = &pixels[y * width];
 
-        for (int x = 0; x < width; ++x) {
+        for (int x = 0; x < half_x; ++x) {
             auto sample_grid = [&](const float* g, int K) -> float {
-                const float step = static_cast<float>(width) / static_cast<float>(K);
+                const float step = static_cast<float>(half_x) / static_cast<float>(K);
                 const float pos = static_cast<float>(x) / step;
-                const int k0 = static_cast<int>(pos) % K;
-                const int k1 = (k0 + 1) % K;
+                const int k0 = std::clamp(static_cast<int>(pos), 0, K - 1);
+                const int k1 = std::clamp(k0 + 1, 0, K - 1);
                 const float t = pos - std::floor(pos);
                 const float w = Smoothstep(t);
                 return (1.0f - w) * g[k0] + w * g[k1];
             };
 
             const float s = sample_grid(row_g1, kK1) + sample_grid(row_g2, kK2) + sample_grid(row_g3, kK3);
-            float lum = kBaseLum + r_b + s + row_micro[x] + specular[x];
+            const float m = micro_half[y * half_x + x];
+            float lum = kBaseLum + r_b + s + m + specular[x];
             lum = std::clamp(lum, 8.0f, 75.0f);
 
-            // Slightly cool dark titanium/anthracite tint
-            out_row[x].r = static_cast<uint8_t>(std::clamp(lum * 0.96f, 0.0f, 255.0f));
-            out_row[x].g = static_cast<uint8_t>(std::clamp(lum * 0.98f, 0.0f, 255.0f));
-            out_row[x].b = static_cast<uint8_t>(std::clamp(lum * 1.04f, 0.0f, 255.0f));
-            out_row[x].a = 255;
+            RgbaPixel px;
+            px.r = static_cast<uint8_t>(std::clamp(lum * 0.96f, 0.0f, 255.0f));
+            px.g = static_cast<uint8_t>(std::clamp(lum * 0.98f, 0.0f, 255.0f));
+            px.b = static_cast<uint8_t>(std::clamp(lum * 1.04f, 0.0f, 255.0f));
+            px.a = 255;
+
+            pixels[y * width + x] = px;
+            pixels[y * width + (width - 1 - x)] = px;
+            pixels[(height - 1 - y) * width + x] = px;
+            pixels[(height - 1 - y) * width + (width - 1 - x)] = px;
         }
     }
 
     return pixels;
+}
+
+bool CdBrushedMetal::Initialize(int tile_size) {
+    return Initialize(tile_size, tile_size);
 }
 
 bool CdBrushedMetal::Initialize(int width, int height) {
@@ -143,9 +144,8 @@ bool CdBrushedMetal::Initialize(int width, int height) {
         Shutdown();
     }
 
-    // Oversized buffer (at least 2560x1440) ensures smooth, seamless resizing with zero regenerations
-    width_ = std::max(width, kDefaultMinCapacityWidth);
-    height_ = std::max(height, kDefaultMinCapacityHeight);
+    width_ = width;
+    height_ = height;
 
     const std::vector<RgbaPixel> pixels = GeneratePixels(width_, height_);
     if (pixels.empty()) {
@@ -171,12 +171,10 @@ bool CdBrushedMetal::EnsureCapacity(int required_width, int required_height) {
     if (required_width <= 0 || required_height <= 0) {
         return false;
     }
-    if (initialized_ && width_ >= required_width && height_ >= required_height) {
+    if (initialized_) {
         return true;
     }
-    const int new_w = std::max(required_width, width_ > 0 ? width_ * 2 : kDefaultMinCapacityWidth);
-    const int new_h = std::max(required_height, height_ > 0 ? height_ * 2 : kDefaultMinCapacityHeight);
-    return Initialize(new_w, new_h);
+    return Initialize(kDefaultTileSize, kDefaultTileSize);
 }
 
 void CdBrushedMetal::Shutdown() {
@@ -242,11 +240,27 @@ void CdBrushedMetal::RenderBackground(ImDrawList* draw_list, const ImVec2& scree
     const ImVec2 max_pos(screen_pos.x + screen_size.x, screen_pos.y + screen_size.y);
 
     if (texture_id_ != 0 && width_ > 0 && height_ > 0) {
-        // Sample corresponding sub-region of oversized texture (never exceeds 1.0)
-        const ImVec2 uv0(0.0f, 0.0f);
-        const ImVec2 uv1(std::clamp(screen_size.x / static_cast<float>(width_), 0.0f, 1.0f),
-                         std::clamp(screen_size.y / static_cast<float>(height_), 0.0f, 1.0f));
-        draw_list->AddImage(GetTextureRef(), screen_pos, max_pos, uv0, uv1);
+        const float tile_w = static_cast<float>(width_);
+        const float tile_h = static_cast<float>(height_);
+
+        // Tile the small symmetric texture seamlessly across the window
+        for (float y = screen_pos.y; y < max_pos.y; y += tile_h) {
+            const float h = std::min(tile_h, max_pos.y - y);
+            const float uv1_y = h / tile_h;
+
+            for (float x = screen_pos.x; x < max_pos.x; x += tile_w) {
+                const float w = std::min(tile_w, max_pos.x - x);
+                const float uv1_x = w / tile_w;
+
+                draw_list->AddImage(
+                    GetTextureRef(),
+                    ImVec2(x, y),
+                    ImVec2(x + w, y + h),
+                    ImVec2(0.0f, 0.0f),
+                    ImVec2(uv1_x, uv1_y)
+                );
+            }
+        }
     } else {
         draw_list->AddRectFilled(screen_pos, max_pos, IM_COL32(28, 28, 32, 255));
     }

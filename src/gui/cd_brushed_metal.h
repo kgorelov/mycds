@@ -17,8 +17,7 @@ struct RgbaPixel {
 
 class CdBrushedMetal {
 public:
-    static constexpr int kDefaultMinCapacityWidth = 2560;
-    static constexpr int kDefaultMinCapacityHeight = 1440;
+    static constexpr int kDefaultTileSize = 128;
 
     CdBrushedMetal() = default;
     ~CdBrushedMetal();
@@ -26,13 +25,13 @@ public:
     CdBrushedMetal(const CdBrushedMetal&) = delete;
     CdBrushedMetal& operator=(const CdBrushedMetal&) = delete;
 
+    bool Initialize(int tile_size = kDefaultTileSize);
     bool Initialize(int width, int height);
     void Shutdown();
 
-    // Ensure texture has at least required_width x required_height capacity.
-    // If current capacity is sufficient, returns true immediately with zero work.
-    // Generates oversized texture (>= 2560x1440) so window resizing requires no regenerations.
-    bool EnsureCapacity(int required_width, int required_height);
+    // With 128x128 symmetric tile rendering, no re-generation is needed when resizing.
+    // EnsureCapacity/UpdateSize ensure initialization and return true immediately.
+    bool EnsureCapacity(int required_width = kDefaultTileSize, int required_height = kDefaultTileSize);
 
     bool UpdateSize(int required_width, int required_height) {
         return EnsureCapacity(required_width, required_height);

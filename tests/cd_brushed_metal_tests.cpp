@@ -99,22 +99,50 @@ TEST(CdBrushedMetalTests, NullDrawListSafety) {
     metal.RenderChassisBolt(nullptr, ImVec2(50, 50), 7.0f);
 }
 
-TEST(CdBrushedMetalTests, EnsureCapacityAndOversizedAllocation) {
+TEST(CdBrushedMetalTests, SymmetricTileBoundaries) {
+    constexpr int size = 128;
+    const auto pixels = CdBrushedMetal::GeneratePixels(size, size);
+
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(size * size));
+
+    for (int y = 0; y < size; ++y) {
+        // Outer boundary seamless wrap: left edge == right edge
+        EXPECT_EQ(pixels[y * size + 0].r, pixels[y * size + (size - 1)].r);
+        EXPECT_EQ(pixels[y * size + 0].g, pixels[y * size + (size - 1)].g);
+        EXPECT_EQ(pixels[y * size + 0].b, pixels[y * size + (size - 1)].b);
+
+        // Center mirror seam: row center is seamless
+        EXPECT_EQ(pixels[y * size + 63].r, pixels[y * size + 64].r);
+        EXPECT_EQ(pixels[y * size + 63].g, pixels[y * size + 64].g);
+        EXPECT_EQ(pixels[y * size + 63].b, pixels[y * size + 64].b);
+    }
+
+    for (int x = 0; x < size; ++x) {
+        // Outer boundary seamless wrap: top edge == bottom edge
+        EXPECT_EQ(pixels[0 * size + x].r, pixels[(size - 1) * size + x].r);
+        EXPECT_EQ(pixels[0 * size + x].g, pixels[(size - 1) * size + x].g);
+        EXPECT_EQ(pixels[0 * size + x].b, pixels[(size - 1) * size + x].b);
+
+        // Center mirror seam: col center is seamless
+        EXPECT_EQ(pixels[63 * size + x].r, pixels[64 * size + x].r);
+        EXPECT_EQ(pixels[63 * size + x].g, pixels[64 * size + x].g);
+        EXPECT_EQ(pixels[63 * size + x].b, pixels[64 * size + x].b);
+    }
+}
+
+TEST(CdBrushedMetalTests, InitializeDefaultTileAndEnsureCapacity) {
     CdBrushedMetal metal;
     EXPECT_FALSE(metal.EnsureCapacity(0, 100));
     EXPECT_FALSE(metal.EnsureCapacity(100, 0));
     EXPECT_FALSE(metal.EnsureCapacity(-1, -1));
 
-    // Initial allocation allocates at least kDefaultMinCapacityWidth x kDefaultMinCapacityHeight (2560x1440)
-    EXPECT_TRUE(metal.EnsureCapacity(1460, 560));
-    EXPECT_GE(metal.GetWidth(), CdBrushedMetal::kDefaultMinCapacityWidth);
-    EXPECT_GE(metal.GetHeight(), CdBrushedMetal::kDefaultMinCapacityHeight);
+    EXPECT_TRUE(metal.Initialize(CdBrushedMetal::kDefaultTileSize));
+    EXPECT_EQ(metal.GetWidth(), CdBrushedMetal::kDefaultTileSize);
+    EXPECT_EQ(metal.GetHeight(), CdBrushedMetal::kDefaultTileSize);
+    EXPECT_TRUE(metal.IsInitialized());
 
-    const int cap_w = metal.GetWidth();
-    const int cap_h = metal.GetHeight();
-
-    // Resizing to dimensions within existing capacity requires no re-allocation
-    EXPECT_TRUE(metal.EnsureCapacity(1600, 800));
-    EXPECT_EQ(metal.GetWidth(), cap_w);
-    EXPECT_EQ(metal.GetHeight(), cap_h);
+    // With static tile, EnsureCapacity returns true immediately with zero re-allocations
+    EXPECT_TRUE(metal.EnsureCapacity(1920, 1080));
+    EXPECT_EQ(metal.GetWidth(), CdBrushedMetal::kDefaultTileSize);
+    EXPECT_EQ(metal.GetHeight(), CdBrushedMetal::kDefaultTileSize);
 }
