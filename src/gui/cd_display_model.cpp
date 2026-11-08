@@ -168,10 +168,18 @@ void CdDisplayModel::seek_forward(double seconds) {
 }
 
 void CdDisplayModel::seek_backward(double seconds) {
-    if (seconds <= 0.0) {
+    if (seconds <= 0.0 || tracks_.empty()) {
         return;
     }
-    track_elapsed_seconds_ = std::max(0.0, track_elapsed_seconds_ - seconds);
+    track_elapsed_seconds_ -= seconds;
+    if (track_elapsed_seconds_ < 0.0) {
+        if (current_track_index_ > 0) {
+            --current_track_index_;
+            track_elapsed_seconds_ = std::max(0.0, static_cast<double>(track_duration_seconds()) + track_elapsed_seconds_);
+        } else {
+            track_elapsed_seconds_ = 0.0;
+        }
+    }
 }
 
 void CdDisplayModel::toggle_shuffle() {

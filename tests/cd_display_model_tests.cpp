@@ -254,6 +254,11 @@ TEST(CdDisplayModelTests, SeekingBehavior) {
     model.seek_forward(dur + 10.0);
     EXPECT_EQ(model.current_track_number(), 2);
     EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+
+    // From track 2 at 0:00, seek backward 5s rewinds into track 1
+    model.seek_backward(5.0);
+    EXPECT_EQ(model.current_track_number(), 1);
+    EXPECT_NEAR(model.track_elapsed_seconds(), static_cast<double>(dur) - 5.0, 0.001);
 }
 
 TEST(CdDisplayModelTests, VolumeAndBalanceAdjustment) {

@@ -15,35 +15,33 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// Color palette for hardware buttons and cyan backlight
+// Color palette for hardware buttons and sockets
 constexpr ImU32 kColSocketBg = IM_COL32(14, 15, 18, 255);
 constexpr ImU32 kColSocketInnerShadow = IM_COL32(6, 6, 8, 240);
-constexpr ImU32 kColSocketBezelLight = IM_COL32(50, 53, 62, 140);
+constexpr ImU32 kColSocketBezelLight = IM_COL32(46, 49, 56, 140);
 
-// Brushed metal button tones (distinctly lighter than the ~40 dark chassis faceplate)
-constexpr ImU32 kColBtnMetalBase = IM_COL32(106, 110, 120, 255);
-constexpr ImU32 kColBtnMetalHover = IM_COL32(126, 131, 142, 255);
-constexpr ImU32 kColBtnMetalActive = IM_COL32(82, 85, 94, 255);
+// Brushed metal button tones (darker titanium/gunmetal grey)
+constexpr ImU32 kColBtnMetalBase = IM_COL32(74, 77, 84, 255);
+constexpr ImU32 kColBtnMetalHover = IM_COL32(90, 94, 102, 255);
+constexpr ImU32 kColBtnMetalActive = IM_COL32(56, 58, 64, 255);
 
 // 3D Machined bevel chamfers
-constexpr ImU32 kColBevelTopLight = IM_COL32(220, 226, 242, 240);
-constexpr ImU32 kColBevelLeftLight = IM_COL32(175, 180, 196, 200);
-constexpr ImU32 kColBevelBottomShadow = IM_COL32(28, 30, 36, 255);
-constexpr ImU32 kColBevelRightShadow = IM_COL32(46, 49, 58, 200);
+constexpr ImU32 kColBevelTopLight = IM_COL32(165, 172, 188, 220);
+constexpr ImU32 kColBevelLeftLight = IM_COL32(130, 136, 148, 180);
+constexpr ImU32 kColBevelBottomShadow = IM_COL32(22, 24, 28, 255);
+constexpr ImU32 kColBevelRightShadow = IM_COL32(36, 38, 44, 190);
 
 // Inverted bevels for depressed button state
-constexpr ImU32 kColBevelDepressedTop = IM_COL32(18, 19, 24, 255);
-constexpr ImU32 kColBevelDepressedLeft = IM_COL32(28, 30, 38, 220);
-constexpr ImU32 kColBevelDepressedBottom = IM_COL32(165, 172, 188, 180);
-constexpr ImU32 kColBevelDepressedRight = IM_COL32(130, 136, 150, 150);
+constexpr ImU32 kColBevelDepressedTop = IM_COL32(16, 17, 20, 255);
+constexpr ImU32 kColBevelDepressedLeft = IM_COL32(22, 24, 28, 220);
+constexpr ImU32 kColBevelDepressedBottom = IM_COL32(135, 140, 155, 170);
+constexpr ImU32 kColBevelDepressedRight = IM_COL32(110, 115, 126, 140);
 
-// Cyan-blue backlight colors
-constexpr ImU32 kColCyanGlowCore = IM_COL32(210, 250, 255, 255);
-constexpr ImU32 kColCyanBright = IM_COL32(0, 235, 255, 255);
-constexpr ImU32 kColCyanMuted = IM_COL32(0, 160, 195, 180);
-constexpr ImU32 kColCyanBloom = IM_COL32(0, 225, 255, 65);
-constexpr ImU32 kColCyanBloomBright = IM_COL32(0, 240, 255, 110);
-constexpr ImU32 kColEngravedShadow = IM_COL32(12, 18, 26, 160);
+// Cyan-blue backlight colors for softly diffused illumination
+constexpr ImU32 kColCyanGlowCore = IM_COL32(180, 248, 255, 230);
+constexpr ImU32 kColCyanBright = IM_COL32(0, 230, 255, 210);
+constexpr ImU32 kColCyanMuted = IM_COL32(0, 155, 190, 140);
+constexpr ImU32 kColCyanBloomBase = IM_COL32(0, 230, 255, 160);
 
 // Long press seeking state tracking
 struct SeekPressTracker {
@@ -65,7 +63,7 @@ float Hash1D(int x) {
 
 void DrawButtonBrushedFace(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, bool hovered, bool pressed) {
     const ImU32 base_col = pressed ? kColBtnMetalActive : (hovered ? kColBtnMetalHover : kColBtnMetalBase);
-    draw_list->AddRectFilled(min_pos, max_pos, base_col, 2.0f);
+    draw_list->AddRectFilled(min_pos, max_pos, base_col, 2.5f);
 
     // Subtle horizontal brushed hairlines
     const int start_y = static_cast<int>(min_pos.y + 1);
@@ -73,8 +71,8 @@ void DrawButtonBrushedFace(ImDrawList* draw_list, const ImVec2& min_pos, const I
     for (int y = start_y; y < end_y; y += 2) {
         const float noise = Hash1D(y * 31 + 17) * 2.0f - 1.0f;
         const ImU32 line_col = (noise > 0.0f)
-            ? IM_COL32(255, 255, 255, static_cast<int>(10.0f * noise))
-            : IM_COL32(0, 0, 0, static_cast<int>(12.0f * (-noise)));
+            ? IM_COL32(255, 255, 255, static_cast<int>(8.0f * noise))
+            : IM_COL32(0, 0, 0, static_cast<int>(10.0f * (-noise)));
         draw_list->AddLine(ImVec2(min_pos.x + 2.0f, static_cast<float>(y)),
                            ImVec2(max_pos.x - 2.0f, static_cast<float>(y)),
                            line_col, 1.0f);
@@ -83,10 +81,10 @@ void DrawButtonBrushedFace(ImDrawList* draw_list, const ImVec2& min_pos, const I
     // Overhead ambient gradient
     draw_list->AddRectFilledMultiColor(
         min_pos, max_pos,
-        IM_COL32(255, 255, 255, 22),
-        IM_COL32(255, 255, 255, 22),
-        IM_COL32(0, 0, 0, 30),
-        IM_COL32(0, 0, 0, 30)
+        IM_COL32(255, 255, 255, 14),
+        IM_COL32(255, 255, 255, 14),
+        IM_COL32(0, 0, 0, 24),
+        IM_COL32(0, 0, 0, 24)
     );
 
     // Bevel edges
@@ -104,7 +102,7 @@ void DrawButtonBrushedFace(ImDrawList* draw_list, const ImVec2& min_pos, const I
 }
 
 void DrawHardwareButtonSocket(ImDrawList* draw_list, const ImVec2& socket_min, const ImVec2& socket_max) {
-    draw_list->AddRectFilled(socket_min, socket_max, kColSocketBg, 3.0f);
+    draw_list->AddRectFilled(socket_min, socket_max, kColSocketBg, 3.5f);
     draw_list->AddLine(ImVec2(socket_min.x, socket_min.y), ImVec2(socket_max.x, socket_min.y), kColSocketInnerShadow, 1.0f);
     draw_list->AddLine(ImVec2(socket_min.x, socket_min.y), ImVec2(socket_min.x, socket_max.y), kColSocketInnerShadow, 1.0f);
     draw_list->AddLine(ImVec2(socket_min.x, socket_max.y), ImVec2(socket_max.x, socket_max.y), kColSocketBezelLight, 1.0f);
@@ -112,249 +110,266 @@ void DrawHardwareButtonSocket(ImDrawList* draw_list, const ImVec2& socket_min, c
 }
 
 // -----------------------------------------------------------------------------
-// Graphical Pictograms with Cyan-Blue Backlighting
+// Soft Diffuse Backlight Geometry Helpers
+// -----------------------------------------------------------------------------
+
+void DrawDiffusedTriangle(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2, const ImVec2& p3,
+                          ImU32 core_col, bool is_bright) {
+    // Subtle soft stencil drop shadow
+    draw_list->AddTriangleFilled(ImVec2(p1.x + 1.0f, p1.y + 1.2f),
+                                 ImVec2(p2.x + 1.0f, p2.y + 1.2f),
+                                 ImVec2(p3.x + 1.0f, p3.y + 1.2f),
+                                 IM_COL32(10, 14, 20, 80));
+
+    // Multi-tier diffuse bloom halos (soft gradual falloff)
+    const ImU32 bloom_outer = is_bright ? IM_COL32(0, 220, 255, 35) : IM_COL32(0, 180, 220, 20);
+    const ImU32 bloom_mid   = is_bright ? IM_COL32(0, 230, 255, 75) : IM_COL32(0, 190, 230, 45);
+    const ImU32 bloom_inner = is_bright ? IM_COL32(60, 240, 255, 140) : IM_COL32(20, 195, 230, 80);
+
+    draw_list->AddTriangle(p1, p2, p3, bloom_outer, 5.0f);
+    draw_list->AddTriangle(p1, p2, p3, bloom_mid, 2.8f);
+    draw_list->AddTriangle(p1, p2, p3, bloom_inner, 1.3f);
+
+    // Blended translucent core fill
+    draw_list->AddTriangleFilled(p1, p2, p3, core_col);
+}
+
+void DrawDiffusedRect(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, float rounding,
+                      ImU32 core_col, bool is_bright) {
+    // Subtle soft stencil drop shadow
+    draw_list->AddRectFilled(ImVec2(min_pos.x + 1.0f, min_pos.y + 1.2f),
+                             ImVec2(max_pos.x + 1.0f, max_pos.y + 1.2f),
+                             IM_COL32(10, 14, 20, 80), rounding);
+
+    const ImU32 bloom_outer = is_bright ? IM_COL32(0, 220, 255, 35) : IM_COL32(0, 180, 220, 20);
+    const ImU32 bloom_mid   = is_bright ? IM_COL32(0, 230, 255, 75) : IM_COL32(0, 190, 230, 45);
+    const ImU32 bloom_inner = is_bright ? IM_COL32(60, 240, 255, 140) : IM_COL32(20, 195, 230, 80);
+
+    draw_list->AddRect(min_pos, max_pos, bloom_outer, rounding, 0, 4.5f);
+    draw_list->AddRect(min_pos, max_pos, bloom_mid, rounding, 0, 2.5f);
+    draw_list->AddRect(min_pos, max_pos, bloom_inner, rounding, 0, 1.2f);
+
+    // Blended translucent core fill
+    draw_list->AddRectFilled(min_pos, max_pos, core_col, rounding);
+}
+
+void DrawDiffusedLine(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2,
+                      ImU32 core_col, float core_thickness, bool is_bright) {
+    draw_list->AddLine(ImVec2(p1.x + 1.0f, p1.y + 1.2f), ImVec2(p2.x + 1.0f, p2.y + 1.2f),
+                       IM_COL32(10, 14, 20, 80), core_thickness);
+
+    const ImU32 bloom_outer = is_bright ? IM_COL32(0, 220, 255, 35) : IM_COL32(0, 180, 220, 20);
+    const ImU32 bloom_mid   = is_bright ? IM_COL32(0, 230, 255, 75) : IM_COL32(0, 190, 230, 45);
+
+    draw_list->AddLine(p1, p2, bloom_outer, core_thickness + 3.8f);
+    draw_list->AddLine(p1, p2, bloom_mid, core_thickness + 1.8f);
+    draw_list->AddLine(p1, p2, core_col, core_thickness);
+}
+
+// -----------------------------------------------------------------------------
+// Graphical Pictograms with Diffuse Backlighting and Centered Geometry
 // -----------------------------------------------------------------------------
 
 void DrawPlayPausePictogram(ImDrawList* draw_list, const ImVec2& center, bool is_playing, bool hovered, bool pressed) {
-    const float play_glow = (is_playing || pressed) ? 1.0f : (hovered ? 0.7f : 0.45f);
-    const float pause_glow = (!is_playing || pressed) ? 1.0f : (hovered ? 0.7f : 0.45f);
+    const bool play_bright = is_playing || pressed;
+    const bool pause_bright = !is_playing || pressed;
 
-    const ImU32 play_core = (play_glow >= 0.9f) ? kColCyanGlowCore : kColCyanMuted;
-    const ImU32 play_bloom = (play_glow >= 0.9f) ? kColCyanBloomBright : kColCyanBloom;
-    const ImU32 pause_core = (pause_glow >= 0.9f) ? kColCyanGlowCore : kColCyanMuted;
-    const ImU32 pause_bloom = (pause_glow >= 0.9f) ? kColCyanBloomBright : kColCyanBloom;
+    const ImU32 play_core = play_bright ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+    const ImU32 pause_core = pause_bright ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
 
-    // Play triangle vertices on the left half
-    const ImVec2 p1(center.x - 16.0f, center.y - 10.0f);
-    const ImVec2 p2(center.x - 16.0f, center.y + 10.0f);
+    // Exact symmetric coordinates around center (Total X span: [-17, +17], Total Y span: [-11, +11])
+    // Play triangle on left: from center.x - 17.0f to center.x - 3.0f
+    const ImVec2 p1(center.x - 17.0f, center.y - 11.0f);
+    const ImVec2 p2(center.x - 17.0f, center.y + 11.0f);
     const ImVec2 p3(center.x - 3.0f, center.y);
+    DrawDiffusedTriangle(draw_list, p1, p2, p3, play_core, play_bright);
 
-    // Laser-etched drop shadow
-    draw_list->AddTriangleFilled(ImVec2(p1.x + 1.0f, p1.y + 1.0f),
-                                 ImVec2(p2.x + 1.0f, p2.y + 1.0f),
-                                 ImVec2(p3.x + 1.0f, p3.y + 1.0f), kColEngravedShadow);
-    // Cyan backlight bloom and filled core
-    draw_list->AddTriangle(p1, p2, p3, play_bloom, 2.5f);
-    draw_list->AddTriangleFilled(p1, p2, p3, play_core);
+    // Pause bars on right: from center.x + 3.0f to center.x + 17.0f
+    const ImVec2 b1_min(center.x + 3.0f, center.y - 11.0f);
+    const ImVec2 b1_max(center.x + 7.5f, center.y + 11.0f);
+    const ImVec2 b2_min(center.x + 12.5f, center.y - 11.0f);
+    const ImVec2 b2_max(center.x + 17.0f, center.y + 11.0f);
 
-    // Pause bars on the right half
-    const ImVec2 b1_min(center.x + 3.0f, center.y - 10.0f);
-    const ImVec2 b1_max(center.x + 7.0f, center.y + 10.0f);
-    const ImVec2 b2_min(center.x + 11.0f, center.y - 10.0f);
-    const ImVec2 b2_max(center.x + 15.0f, center.y + 10.0f);
-
-    // Laser-etched drop shadow
-    draw_list->AddRectFilled(ImVec2(b1_min.x + 1.0f, b1_min.y + 1.0f), ImVec2(b1_max.x + 1.0f, b1_max.y + 1.0f), kColEngravedShadow, 1.0f);
-    draw_list->AddRectFilled(ImVec2(b2_min.x + 1.0f, b2_min.y + 1.0f), ImVec2(b2_max.x + 1.0f, b2_max.y + 1.0f), kColEngravedShadow, 1.0f);
-
-    // Cyan backlight bloom and filled core
-    draw_list->AddRect(b1_min, b1_max, pause_bloom, 1.0f, 0, 2.0f);
-    draw_list->AddRect(b2_min, b2_max, pause_bloom, 1.0f, 0, 2.0f);
-    draw_list->AddRectFilled(b1_min, b1_max, pause_core, 1.0f);
-    draw_list->AddRectFilled(b2_min, b2_max, pause_core, 1.0f);
+    DrawDiffusedRect(draw_list, b1_min, b1_max, 1.2f, pause_core, pause_bright);
+    DrawDiffusedRect(draw_list, b2_min, b2_max, 1.2f, pause_core, pause_bright);
 }
 
 void DrawStopPictogram(ImDrawList* draw_list, const ImVec2& center, bool hovered, bool pressed) {
+    const bool is_bright = pressed || hovered;
     const ImU32 core_col = pressed ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
-    const ImU32 bloom_col = pressed ? kColCyanBloomBright : kColCyanBloom;
 
-    const ImVec2 min_pos(center.x - 9.0f, center.y - 9.0f);
-    const ImVec2 max_pos(center.x + 9.0f, center.y + 9.0f);
+    // Exactly centered 19x19 square: [-9.5, +9.5]
+    const ImVec2 min_pos(center.x - 9.5f, center.y - 9.5f);
+    const ImVec2 max_pos(center.x + 9.5f, center.y + 9.5f);
 
-    // Laser-etched drop shadow
-    draw_list->AddRectFilled(ImVec2(min_pos.x + 1.0f, min_pos.y + 1.0f),
-                             ImVec2(max_pos.x + 1.0f, max_pos.y + 1.0f),
-                             kColEngravedShadow, 1.5f);
-    // Cyan bloom and core
-    draw_list->AddRect(min_pos, max_pos, bloom_col, 1.5f, 0, 2.5f);
-    draw_list->AddRectFilled(min_pos, max_pos, core_col, 1.5f);
+    DrawDiffusedRect(draw_list, min_pos, max_pos, 2.0f, core_col, is_bright);
 }
 
 void DrawPrevPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_seeking, bool hovered, bool pressed) {
-    ImU32 core_col = (pressed || is_seeking) ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
-    ImU32 bloom_col = (pressed || is_seeking) ? kColCyanBloomBright : kColCyanBloom;
+    const bool is_active = pressed || is_seeking;
+    const ImU32 base_col = is_active ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+
+    // Seeking animation wave flowing leftwards: <<
+    float wave_q = 1.0f;
+    float wave_p = 1.0f;
+    float wave_bar = 1.0f;
 
     if (is_seeking) {
-        // Fast pulsing cyan glow during rewind seeking
-        const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(ImGui::GetTime()) * 22.0f);
-        bloom_col = IM_COL32(0, 240, 255, static_cast<int>(120 + 130 * pulse));
+        const float anim_time = static_cast<float>(ImGui::GetTime());
+        const float phase = std::fmod(anim_time * 12.0f, 3.0f);
+        wave_q = (phase < 1.0f) ? 1.0f : 0.35f;
+        wave_p = (phase >= 1.0f && phase < 2.0f) ? 1.0f : 0.35f;
+        wave_bar = (phase >= 2.0f) ? 1.0f : 0.35f;
     }
 
-    // Left chevron 1
-    const ImVec2 p1(center.x - 2.0f, center.y - 9.0f);
-    const ImVec2 p2(center.x - 2.0f, center.y + 9.0f);
-    const ImVec2 p3(center.x - 12.0f, center.y);
+    auto ModulateCol = [](ImU32 col, float factor) {
+        ImVec4 c = ImGui::ColorConvertU32ToFloat4(col);
+        c.w = std::clamp(c.w * factor, 0.2f, 1.0f);
+        return ImGui::ColorConvertFloat4ToU32(c);
+    };
 
-    // Left chevron 2
-    const ImVec2 q1(center.x + 9.0f, center.y - 9.0f);
-    const ImVec2 q2(center.x + 9.0f, center.y + 9.0f);
-    const ImVec2 q3(center.x - 1.0f, center.y);
+    const ImU32 col_q = ModulateCol(base_col, wave_q);
+    const ImU32 col_p = ModulateCol(base_col, wave_p);
+    const ImU32 col_bar = ModulateCol(base_col, wave_bar);
 
-    // End vertical bar
-    const ImVec2 bar_min(center.x - 15.0f, center.y - 9.0f);
-    const ImVec2 bar_max(center.x - 12.5f, center.y + 9.0f);
+    // Centered double chevron with end bar:
+    // Left end bar: [-14.5, -12.0]
+    const ImVec2 bar_min(center.x - 14.5f, center.y - 10.0f);
+    const ImVec2 bar_max(center.x - 12.0f, center.y + 10.0f);
+    DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, col_bar, is_active && wave_bar > 0.8f);
 
-    // Engraved shadows
-    draw_list->AddTriangleFilled(ImVec2(p1.x + 1, p1.y + 1), ImVec2(p2.x + 1, p2.y + 1), ImVec2(p3.x + 1, p3.y + 1), kColEngravedShadow);
-    draw_list->AddTriangleFilled(ImVec2(q1.x + 1, q1.y + 1), ImVec2(q2.x + 1, q2.y + 1), ImVec2(q3.x + 1, q3.y + 1), kColEngravedShadow);
-    draw_list->AddRectFilled(ImVec2(bar_min.x + 1, bar_min.y + 1), ImVec2(bar_max.x + 1, bar_max.y + 1), kColEngravedShadow, 0.5f);
+    // Left chevron (p): tip at -10.0, base at 0.0
+    const ImVec2 p1(center.x - 0.5f, center.y - 10.0f);
+    const ImVec2 p2(center.x - 0.5f, center.y + 10.0f);
+    const ImVec2 p3(center.x - 10.0f, center.y);
+    DrawDiffusedTriangle(draw_list, p1, p2, p3, col_p, is_active && wave_p > 0.8f);
 
-    // Blooms
-    draw_list->AddTriangle(p1, p2, p3, bloom_col, 2.0f);
-    draw_list->AddTriangle(q1, q2, q3, bloom_col, 2.0f);
-    draw_list->AddRect(bar_min, bar_max, bloom_col, 0.5f, 0, 1.5f);
-
-    // Cores
-    draw_list->AddTriangleFilled(p1, p2, p3, core_col);
-    draw_list->AddTriangleFilled(q1, q2, q3, core_col);
-    draw_list->AddRectFilled(bar_min, bar_max, core_col, 0.5f);
+    // Right chevron (q): tip at +4.0, base at +14.5
+    const ImVec2 q1(center.x + 14.5f, center.y - 10.0f);
+    const ImVec2 q2(center.x + 14.5f, center.y + 10.0f);
+    const ImVec2 q3(center.x + 4.0f, center.y);
+    DrawDiffusedTriangle(draw_list, q1, q2, q3, col_q, is_active && wave_q > 0.8f);
 }
 
 void DrawNextPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_seeking, bool hovered, bool pressed) {
-    ImU32 core_col = (pressed || is_seeking) ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
-    ImU32 bloom_col = (pressed || is_seeking) ? kColCyanBloomBright : kColCyanBloom;
+    const bool is_active = pressed || is_seeking;
+    const ImU32 base_col = is_active ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+
+    // Seeking animation wave flowing rightwards: >>
+    float wave_p = 1.0f;
+    float wave_q = 1.0f;
+    float wave_bar = 1.0f;
 
     if (is_seeking) {
-        // Fast pulsing cyan glow during forward seeking
-        const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(ImGui::GetTime()) * 22.0f);
-        bloom_col = IM_COL32(0, 240, 255, static_cast<int>(120 + 130 * pulse));
+        const float anim_time = static_cast<float>(ImGui::GetTime());
+        const float phase = std::fmod(anim_time * 12.0f, 3.0f);
+        wave_p = (phase < 1.0f) ? 1.0f : 0.35f;
+        wave_q = (phase >= 1.0f && phase < 2.0f) ? 1.0f : 0.35f;
+        wave_bar = (phase >= 2.0f) ? 1.0f : 0.35f;
     }
 
-    // Right chevron 1
-    const ImVec2 p1(center.x - 9.0f, center.y - 9.0f);
-    const ImVec2 p2(center.x - 9.0f, center.y + 9.0f);
-    const ImVec2 p3(center.x + 1.0f, center.y);
+    auto ModulateCol = [](ImU32 col, float factor) {
+        ImVec4 c = ImGui::ColorConvertU32ToFloat4(col);
+        c.w = std::clamp(c.w * factor, 0.2f, 1.0f);
+        return ImGui::ColorConvertFloat4ToU32(c);
+    };
 
-    // Right chevron 2
-    const ImVec2 q1(center.x + 2.0f, center.y - 9.0f);
-    const ImVec2 q2(center.x + 2.0f, center.y + 9.0f);
-    const ImVec2 q3(center.x + 12.0f, center.y);
+    const ImU32 col_p = ModulateCol(base_col, wave_p);
+    const ImU32 col_q = ModulateCol(base_col, wave_q);
+    const ImU32 col_bar = ModulateCol(base_col, wave_bar);
 
-    // End vertical bar
-    const ImVec2 bar_min(center.x + 12.5f, center.y - 9.0f);
-    const ImVec2 bar_max(center.x + 15.0f, center.y + 9.0f);
+    // Exact symmetric mirror of Prev:
+    // Left chevron (p): base at -14.5, tip at -4.0
+    const ImVec2 p1(center.x - 14.5f, center.y - 10.0f);
+    const ImVec2 p2(center.x - 14.5f, center.y + 10.0f);
+    const ImVec2 p3(center.x - 4.0f, center.y);
+    DrawDiffusedTriangle(draw_list, p1, p2, p3, col_p, is_active && wave_p > 0.8f);
 
-    // Engraved shadows
-    draw_list->AddTriangleFilled(ImVec2(p1.x + 1, p1.y + 1), ImVec2(p2.x + 1, p2.y + 1), ImVec2(p3.x + 1, p3.y + 1), kColEngravedShadow);
-    draw_list->AddTriangleFilled(ImVec2(q1.x + 1, q1.y + 1), ImVec2(q2.x + 1, q2.y + 1), ImVec2(q3.x + 1, q3.y + 1), kColEngravedShadow);
-    draw_list->AddRectFilled(ImVec2(bar_min.x + 1, bar_min.y + 1), ImVec2(bar_max.x + 1, bar_max.y + 1), kColEngravedShadow, 0.5f);
+    // Right chevron (q): base at +0.5, tip at +10.0
+    const ImVec2 q1(center.x + 0.5f, center.y - 10.0f);
+    const ImVec2 q2(center.x + 0.5f, center.y + 10.0f);
+    const ImVec2 q3(center.x + 10.0f, center.y);
+    DrawDiffusedTriangle(draw_list, q1, q2, q3, col_q, is_active && wave_q > 0.8f);
 
-    // Blooms
-    draw_list->AddTriangle(p1, p2, p3, bloom_col, 2.0f);
-    draw_list->AddTriangle(q1, q2, q3, bloom_col, 2.0f);
-    draw_list->AddRect(bar_min, bar_max, bloom_col, 0.5f, 0, 1.5f);
-
-    // Cores
-    draw_list->AddTriangleFilled(p1, p2, p3, core_col);
-    draw_list->AddTriangleFilled(q1, q2, q3, core_col);
-    draw_list->AddRectFilled(bar_min, bar_max, core_col, 0.5f);
+    // Right end bar: [+12.0, +14.5]
+    const ImVec2 bar_min(center.x + 12.0f, center.y - 10.0f);
+    const ImVec2 bar_max(center.x + 14.5f, center.y + 10.0f);
+    DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, col_bar, is_active && wave_bar > 0.8f);
 }
 
 void DrawEjectPictogram(ImDrawList* draw_list, const ImVec2& center, bool hovered, bool pressed) {
+    const bool is_bright = pressed || hovered;
     const ImU32 core_col = pressed ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
-    const ImU32 bloom_col = pressed ? kColCyanBloomBright : kColCyanBloom;
 
-    // Upward triangle
-    const ImVec2 t1(center.x - 10.0f, center.y + 1.0f);
-    const ImVec2 t2(center.x + 10.0f, center.y + 1.0f);
-    const ImVec2 t3(center.x, center.y - 10.0f);
+    // Centered upward triangle: [-11.0, +11.0], height 11.5
+    const ImVec2 t1(center.x - 11.0f, center.y + 1.0f);
+    const ImVec2 t2(center.x + 11.0f, center.y + 1.0f);
+    const ImVec2 t3(center.x, center.y - 10.5f);
+    DrawDiffusedTriangle(draw_list, t1, t2, t3, core_col, is_bright);
 
-    // Horizontal tray bar
-    const ImVec2 bar_min(center.x - 10.0f, center.y + 5.0f);
-    const ImVec2 bar_max(center.x + 10.0f, center.y + 8.5f);
-
-    // Shadow
-    draw_list->AddTriangleFilled(ImVec2(t1.x + 1, t1.y + 1), ImVec2(t2.x + 1, t2.y + 1), ImVec2(t3.x + 1, t3.y + 1), kColEngravedShadow);
-    draw_list->AddRectFilled(ImVec2(bar_min.x + 1, bar_min.y + 1), ImVec2(bar_max.x + 1, bar_max.y + 1), kColEngravedShadow, 0.5f);
-
-    // Bloom
-    draw_list->AddTriangle(t1, t2, t3, bloom_col, 2.0f);
-    draw_list->AddRect(bar_min, bar_max, bloom_col, 0.5f, 0, 1.5f);
-
-    // Core
-    draw_list->AddTriangleFilled(t1, t2, t3, core_col);
-    draw_list->AddRectFilled(bar_min, bar_max, core_col, 0.5f);
+    // Centered horizontal tray bar: [-11.0, +11.0]
+    const ImVec2 bar_min(center.x - 11.0f, center.y + 5.5f);
+    const ImVec2 bar_max(center.x + 11.0f, center.y + 9.5f);
+    DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, core_col, is_bright);
 }
 
 void DrawShufflePictogram(ImDrawList* draw_list, const ImVec2& center, bool is_active, bool hovered, bool pressed) {
-    const ImU32 core_col = (is_active || pressed) ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
-    const ImU32 bloom_col = (is_active || pressed) ? kColCyanBloomBright : kColCyanBloom;
+    const bool is_bright = is_active || pressed;
+    const ImU32 core_col = is_bright ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
 
-    // Crossing arrow paths
-    const float y1 = center.y - 4.5f;
-    const float y2 = center.y + 4.5f;
-    const float x_start = center.x - 16.0f;
-    const float x_mid1 = center.x - 6.0f;
-    const float x_mid2 = center.x + 2.0f;
-    const float x_end = center.x + 10.0f;
+    // Centered crossing arrow paths: [-21.0, +13.5], LED at +20.0
+    const float y1 = center.y - 5.0f;
+    const float y2 = center.y + 5.0f;
+    const float x_start = center.x - 21.0f;
+    const float x_mid1 = center.x - 10.0f;
+    const float x_mid2 = center.x + 1.0f;
+    const float x_end = center.x + 9.5f;
 
-    // Laser shadow lines
-    draw_list->AddLine(ImVec2(x_start + 1, y1 + 1), ImVec2(x_mid1 + 1, y1 + 1), kColEngravedShadow, 2.0f);
-    draw_list->AddLine(ImVec2(x_mid1 + 1, y1 + 1), ImVec2(x_mid2 + 1, y2 + 1), kColEngravedShadow, 2.0f);
-    draw_list->AddLine(ImVec2(x_mid2 + 1, y2 + 1), ImVec2(x_end + 1, y2 + 1), kColEngravedShadow, 2.0f);
+    DrawDiffusedLine(draw_list, ImVec2(x_start, y1), ImVec2(x_mid1, y1), core_col, 1.8f, is_bright);
+    DrawDiffusedLine(draw_list, ImVec2(x_mid1, y1), ImVec2(x_mid2, y2), core_col, 1.8f, is_bright);
+    DrawDiffusedLine(draw_list, ImVec2(x_mid2, y2), ImVec2(x_end, y2), core_col, 1.8f, is_bright);
 
-    draw_list->AddLine(ImVec2(x_start + 1, y2 + 1), ImVec2(x_mid1 + 1, y2 + 1), kColEngravedShadow, 2.0f);
-    draw_list->AddLine(ImVec2(x_mid1 + 1, y2 + 1), ImVec2(x_mid2 + 1, y1 + 1), kColEngravedShadow, 2.0f);
-    draw_list->AddLine(ImVec2(x_mid2 + 1, y1 + 1), ImVec2(x_end + 1, y1 + 1), kColEngravedShadow, 2.0f);
-
-    // Bloom lines
-    draw_list->AddLine(ImVec2(x_start, y1), ImVec2(x_mid1, y1), bloom_col, 3.0f);
-    draw_list->AddLine(ImVec2(x_mid1, y1), ImVec2(x_mid2, y2), bloom_col, 3.0f);
-    draw_list->AddLine(ImVec2(x_mid2, y2), ImVec2(x_end, y2), bloom_col, 3.0f);
-
-    draw_list->AddLine(ImVec2(x_start, y2), ImVec2(x_mid1, y2), bloom_col, 3.0f);
-    draw_list->AddLine(ImVec2(x_mid1, y2), ImVec2(x_mid2, y1), bloom_col, 3.0f);
-    draw_list->AddLine(ImVec2(x_mid2, y1), ImVec2(x_end, y1), bloom_col, 3.0f);
-
-    // Core lines
-    draw_list->AddLine(ImVec2(x_start, y1), ImVec2(x_mid1, y1), core_col, 1.8f);
-    draw_list->AddLine(ImVec2(x_mid1, y1), ImVec2(x_mid2, y2), core_col, 1.8f);
-    draw_list->AddLine(ImVec2(x_mid2, y2), ImVec2(x_end, y2), core_col, 1.8f);
-
-    draw_list->AddLine(ImVec2(x_start, y2), ImVec2(x_mid1, y2), core_col, 1.8f);
-    draw_list->AddLine(ImVec2(x_mid1, y2), ImVec2(x_mid2, y1), core_col, 1.8f);
-    draw_list->AddLine(ImVec2(x_mid2, y1), ImVec2(x_end, y1), core_col, 1.8f);
+    DrawDiffusedLine(draw_list, ImVec2(x_start, y2), ImVec2(x_mid1, y2), core_col, 1.8f, is_bright);
+    DrawDiffusedLine(draw_list, ImVec2(x_mid1, y2), ImVec2(x_mid2, y1), core_col, 1.8f, is_bright);
+    DrawDiffusedLine(draw_list, ImVec2(x_mid2, y1), ImVec2(x_end, y1), core_col, 1.8f, is_bright);
 
     // Arrow heads
-    draw_list->AddTriangleFilled(ImVec2(x_end, y1 - 3.5f), ImVec2(x_end, y1 + 3.5f), ImVec2(x_end + 4.5f, y1), core_col);
-    draw_list->AddTriangleFilled(ImVec2(x_end, y2 - 3.5f), ImVec2(x_end, y2 + 3.5f), ImVec2(x_end + 4.5f, y2), core_col);
+    DrawDiffusedTriangle(draw_list, ImVec2(x_end, y1 - 3.5f), ImVec2(x_end, y1 + 3.5f), ImVec2(x_end + 4.5f, y1), core_col, is_bright);
+    DrawDiffusedTriangle(draw_list, ImVec2(x_end, y2 - 3.5f), ImVec2(x_end, y2 + 3.5f), ImVec2(x_end + 4.5f, y2), core_col, is_bright);
 
     // Active status mini-LED indicator dot on right side
     const ImVec2 led_center(center.x + 20.0f, center.y);
     draw_list->AddCircleFilled(led_center, 3.0f, IM_COL32(18, 20, 24, 255));
     if (is_active) {
-        draw_list->AddCircle(led_center, 4.0f, kColCyanBloomBright, 0, 2.0f);
-        draw_list->AddCircleFilled(led_center, 2.2f, kColCyanBright);
+        draw_list->AddCircle(led_center, 4.0f, IM_COL32(0, 240, 255, 120), 0, 2.0f);
+        draw_list->AddCircleFilled(led_center, 2.2f, kColCyanGlowCore);
     } else {
         draw_list->AddCircleFilled(led_center, 2.0f, IM_COL32(0, 50, 65, 200));
     }
 }
 
 void DrawRepeatPictogram(ImDrawList* draw_list, const ImVec2& center, RepeatMode mode, bool hovered, bool pressed) {
-    const bool is_active = (mode != RepeatMode::Off);
-    const ImU32 core_col = (is_active || pressed) ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
-    const ImU32 bloom_col = (is_active || pressed) ? kColCyanBloomBright : kColCyanBloom;
+    const bool is_active = (mode != RepeatMode::Off) || pressed;
+    const ImU32 core_col = is_active ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
 
-    // Looping arrows rectangle
-    const ImVec2 loop_min(center.x - 14.0f, center.y - 5.5f);
-    const ImVec2 loop_max(center.x + 6.0f, center.y + 5.5f);
+    // Looping arrows rectangle: [-20.0, +4.0], text at +10.5
+    const ImVec2 loop_min(center.x - 20.0f, center.y - 6.0f);
+    const ImVec2 loop_max(center.x + 4.0f, center.y + 6.0f);
 
-    draw_list->AddRect(ImVec2(loop_min.x + 1, loop_min.y + 1), ImVec2(loop_max.x + 1, loop_max.y + 1), kColEngravedShadow, 3.0f, 0, 1.8f);
-    draw_list->AddRect(loop_min, loop_max, bloom_col, 3.0f, 0, 2.5f);
-    draw_list->AddRect(loop_min, loop_max, core_col, 3.0f, 0, 1.6f);
+    DrawDiffusedRect(draw_list, loop_min, loop_max, 2.5f, core_col, is_active);
 
     // Top arrow head pointing right
-    draw_list->AddTriangleFilled(ImVec2(loop_max.x - 4.0f, loop_min.y - 3.0f),
-                                 ImVec2(loop_max.x - 4.0f, loop_min.y + 3.0f),
-                                 ImVec2(loop_max.x + 1.0f, loop_min.y), core_col);
+    DrawDiffusedTriangle(draw_list, ImVec2(loop_max.x - 4.5f, loop_min.y - 3.5f),
+                         ImVec2(loop_max.x - 4.5f, loop_min.y + 3.5f),
+                         ImVec2(loop_max.x + 1.0f, loop_min.y), core_col, is_active);
 
     // Bottom arrow head pointing left
-    draw_list->AddTriangleFilled(ImVec2(loop_min.x + 4.0f, loop_max.y - 3.0f),
-                                 ImVec2(loop_min.x + 4.0f, loop_max.y + 3.0f),
-                                 ImVec2(loop_min.x - 1.0f, loop_max.y), core_col);
+    DrawDiffusedTriangle(draw_list, ImVec2(loop_min.x + 4.5f, loop_max.y - 3.5f),
+                         ImVec2(loop_min.x + 4.5f, loop_max.y + 3.5f),
+                         ImVec2(loop_min.x - 1.0f, loop_max.y), core_col, is_active);
 
-    // Mode status text: "1" or "ALL" on right side
-    const ImVec2 text_pos(center.x + 12.0f, center.y - 7.0f);
+    // Mode status text: "1" or "A" on right side
+    const ImVec2 text_pos(center.x + 10.5f, center.y - 7.0f);
     if (mode == RepeatMode::Track) {
         draw_list->AddText(text_pos, kColCyanGlowCore, "1");
     } else if (mode == RepeatMode::Disc) {
@@ -428,7 +443,6 @@ void RenderHardwareKnob(
 
         bool tick_lit = false;
         if (is_balance) {
-            // For balance: center tick (detent) is lit if centered; otherwise lit towards current side
             if (i == (kTotalTicks / 2)) {
                 tick_lit = (std::abs(*value) < 0.05f);
             } else if (*value < 0.0f) {
@@ -437,7 +451,6 @@ void RenderHardwareKnob(
                 tick_lit = (t >= 0.5f && tick_angle <= current_angle);
             }
         } else {
-            // For volume: ticks up to current level are lit
             tick_lit = (tick_angle <= current_angle + 0.02f);
         }
 
@@ -446,7 +459,7 @@ void RenderHardwareKnob(
             : IM_COL32(50, 54, 62, 200);
 
         if (tick_lit) {
-            draw_list->AddLine(p1, p2, kColCyanBloom, 2.5f);
+            draw_list->AddLine(p1, p2, IM_COL32(0, 225, 255, 75), 2.5f);
         }
         draw_list->AddLine(p1, p2, tick_col, (i == 0 || i == kTotalTicks - 1) ? 1.8f : 1.2f);
     }
@@ -463,26 +476,26 @@ void RenderHardwareKnob(
         const float sa = std::sin(angle);
         const ImVec2 p1(center.x + (radius - 3.0f) * ca, center.y + (radius - 3.0f) * sa);
         const ImVec2 p2(center.x + radius * ca, center.y + radius * sa);
-        const ImU32 knurl_col = (angle < kPi) ? IM_COL32(140, 145, 156, 200) : IM_COL32(35, 37, 44, 220);
+        const ImU32 knurl_col = (angle < kPi) ? IM_COL32(130, 136, 146, 200) : IM_COL32(32, 34, 40, 220);
         draw_list->AddLine(p1, p2, knurl_col, 1.2f);
     }
 
-    // 4. Circular brushed metal face
-    draw_list->AddCircleFilled(center, radius - 3.0f, is_hovered ? IM_COL32(110, 114, 124, 255) : IM_COL32(96, 99, 108, 255));
+    // 4. Circular brushed metal face (darker tone harmonizing with buttons)
+    draw_list->AddCircleFilled(center, radius - 3.0f, is_hovered ? IM_COL32(84, 88, 96, 255) : IM_COL32(72, 75, 82, 255));
 
     // Concentric machined groove rings
-    draw_list->AddCircle(center, radius - 5.5f, IM_COL32(70, 73, 80, 160), 0, 1.0f);
-    draw_list->AddCircle(center, radius - 8.5f, IM_COL32(130, 135, 146, 120), 0, 1.0f);
-    draw_list->AddCircle(center, radius - 11.5f, IM_COL32(65, 68, 75, 180), 0, 1.0f);
+    draw_list->AddCircle(center, radius - 5.5f, IM_COL32(50, 52, 58, 160), 0, 1.0f);
+    draw_list->AddCircle(center, radius - 8.5f, IM_COL32(96, 100, 110, 120), 0, 1.0f);
+    draw_list->AddCircle(center, radius - 11.5f, IM_COL32(48, 50, 56, 180), 0, 1.0f);
 
-    // Overhead ambient light specular reflection (top edge highlight, bottom shadow)
+    // Overhead ambient light specular reflection
     draw_list->AddCircle(center, radius - 3.0f, kColBevelTopLight, 0, 1.2f);
 
     // 5. Center recessed cap with milled bevel
     const float cap_r = radius * 0.46f;
-    draw_list->AddCircleFilled(center, cap_r, IM_COL32(32, 33, 38, 255));
-    draw_list->AddCircle(center, cap_r, IM_COL32(18, 19, 22, 255), 0, 1.2f);
-    draw_list->AddCircle(center, cap_r - 1.0f, IM_COL32(68, 72, 82, 180), 0, 1.0f);
+    draw_list->AddCircleFilled(center, cap_r, IM_COL32(28, 29, 34, 255));
+    draw_list->AddCircle(center, cap_r, IM_COL32(16, 17, 20, 255), 0, 1.2f);
+    draw_list->AddCircle(center, cap_r - 1.0f, IM_COL32(60, 64, 72, 180), 0, 1.0f);
 
     // 6. Cyan backlit indicator pointer notch
     const float ptr_ca = std::cos(current_angle - 0.5f * kPi);
@@ -490,9 +503,8 @@ void RenderHardwareKnob(
     const ImVec2 ptr_start(center.x + (cap_r + 1.0f) * ptr_ca, center.y + (cap_r + 1.0f) * ptr_sa);
     const ImVec2 ptr_end(center.x + (radius - 3.5f) * ptr_ca, center.y + (radius - 3.5f) * ptr_sa);
 
-    // Pointer bloom and core
-    draw_list->AddLine(ptr_start, ptr_end, kColCyanBloomBright, 3.5f);
-    draw_list->AddLine(ptr_start, ptr_end, kColCyanGlowCore, 1.8f);
+    // Diffuse pointer glow
+    DrawDiffusedLine(draw_list, ptr_start, ptr_end, kColCyanGlowCore, 1.8f, true);
 
     // 7. Labels underneath knob
     char val_buf[32];
@@ -752,17 +764,28 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
     const ImVec2 panel_max(cursor_pos.x + panel_width, cursor_pos.y + panel_height);
 
     // Chassis bezel framing matching Phase 2.1 display and 2.3 volume meter
-    GetBrushedMetal().RenderPanelChassis(draw_list, panel_min, panel_max, 6.0f);
+    GetBrushedMetal().RenderPanelChassis(draw_list, panel_min, panel_max, 8.0f);
 
-    // Layout geometry
-    constexpr float kNormalBtnSize = 56.0f;
-    constexpr float kHalfBtnWidth = 56.0f;
-    constexpr float kHalfBtnHeight = 25.0f;
+    // 4 Corner heavy-duty chassis screws matching display and volume meter widgets
+    auto draw_screw = [&](ImVec2 pos) {
+        draw_list->AddCircleFilled(pos, 3.0f, IM_COL32(40, 40, 44, 255));
+        draw_list->AddCircle(pos, 3.0f, IM_COL32(70, 70, 76, 255), 10, 1.0f);
+        draw_list->AddLine(ImVec2(pos.x - 1.8f, pos.y), ImVec2(pos.x + 1.8f, pos.y), IM_COL32(20, 20, 22, 255), 1.0f);
+    };
+    draw_screw(ImVec2(panel_min.x + 10.0f, panel_min.y + 10.0f));
+    draw_screw(ImVec2(panel_max.x - 10.0f, panel_min.y + 10.0f));
+    draw_screw(ImVec2(panel_min.x + 10.0f, panel_max.y - 10.0f));
+    draw_screw(ImVec2(panel_max.x - 10.0f, panel_max.y - 10.0f));
+
+    // Layout geometry: slightly bigger buttons (62x62 normal, 62x28 half-size)
+    constexpr float kNormalBtnSize = 62.0f;
+    constexpr float kHalfBtnWidth = 62.0f;
+    constexpr float kHalfBtnHeight = 28.0f;
     constexpr float kBtnGap = 8.0f;
     constexpr float kKnobRadius = 23.0f;
 
     const float btn_start_y = panel_min.y + (panel_height - kNormalBtnSize) * 0.5f;
-    float current_x = panel_min.x + 18.0f;
+    float current_x = panel_min.x + 22.0f;
 
     // Helper lambda for rendering a standard hardware button
     auto RenderHardwareButton = [&](const char* id, const ImVec2& pos, const ImVec2& btn_sz, auto draw_pictogram) {
@@ -807,7 +830,7 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
     const bool prev_hovered = ImGui::IsItemHovered();
     const bool prev_active = ImGui::IsItemActive();
 
-    // Long press tracking for Prev
+    // Long press tracking for Prev with seek backward animation
     if (prev_active) {
         if (!s_prev_tracker.is_held) {
             s_prev_tracker.is_held = true;
@@ -870,7 +893,7 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
         model.stop();
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Stop Playback");
+        ImGui::SetTooltip("Stop Playback (X)");
     }
     current_x += kNormalBtnSize + kBtnGap;
 
@@ -881,7 +904,7 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
     const bool next_hovered = ImGui::IsItemHovered();
     const bool next_active = ImGui::IsItemActive();
 
-    // Long press tracking for Next
+    // Long press tracking for Next with seek forward animation
     if (next_active) {
         if (!s_next_tracker.is_held) {
             s_next_tracker.is_held = true;
@@ -949,12 +972,12 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
             ? "OFF" : ((model.repeat_mode() == RepeatMode::Disc) ? "DISC" : "TRACK");
         ImGui::SetTooltip("Repeat Mode [R]: %s", rep_str);
     }
-    current_x += kHalfBtnWidth + 20.0f;
+    current_x += kHalfBtnWidth + 16.0f;
 
     // Vertical precision divider line separating buttons and knobs
-    const float div_x = current_x - 4.0f;
-    draw_list->AddLine(ImVec2(div_x, panel_min.y + 16.0f), ImVec2(div_x, panel_max.y - 16.0f), IM_COL32(20, 22, 26, 255), 1.0f);
-    draw_list->AddLine(ImVec2(div_x + 1.0f, panel_min.y + 16.0f), ImVec2(div_x + 1.0f, panel_max.y - 16.0f), IM_COL32(75, 80, 92, 140), 1.0f);
+    const float div_x = current_x - 3.0f;
+    draw_list->AddLine(ImVec2(div_x, panel_min.y + 16.0f), ImVec2(div_x, panel_max.y - 16.0f), IM_COL32(18, 20, 24, 255), 1.0f);
+    draw_list->AddLine(ImVec2(div_x + 1.0f, panel_min.y + 16.0f), ImVec2(div_x + 1.0f, panel_max.y - 16.0f), IM_COL32(65, 70, 80, 140), 1.0f);
     current_x += 16.0f;
 
     // 7. Two round knobs next to each other: Volume and Balance
