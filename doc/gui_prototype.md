@@ -47,3 +47,24 @@ Square LEDs: red, yellow and green. Like on the old recorders.
 Should be placed under the main CD display.
 In the prototype simulation it should behave as if the music was playing (when not paused), when paused - empty (all segments not lit).
 
+
+### Phase 2.4 - Controls
+
+Grey sqare buttons of brushed metal, ligher than the background.
+Each button having a backlit (cyan-blue) graphical pictogram.
+Let's make controls look and feel like real hardware buttons.
+
+Normal sized sqaure buttons:
+  - Play/Pause: > ||
+  - Stop
+  - Prev track: << (seek backward when long-pressed)
+  - Next track: >> (seek forward when long-pressed)
+  - Eject (load) button - will open a dialog to select a CD, image from disk or a CD from the library
+
+Two smaller half size buttons one on top of the other:
+  - Shuffle
+  - Repeat
+
+Two round knobs next to each other:
+  - Volume
+  - Balance
