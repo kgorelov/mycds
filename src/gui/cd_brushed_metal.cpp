@@ -39,15 +39,15 @@ std::vector<RgbaPixel> CdBrushedMetal::GeneratePixels(int width, int height, uin
     const int half_y = (height + 1) / 2;
     const int half_x = (width + 1) / 2;
 
-    // 1. Symmetric row baseline roughness
+    // 1. Symmetric row baseline roughness (subtle row-to-row variation)
     std::vector<float> row_base(height);
     for (int y = 0; y < half_y; ++y) {
-        const float val = (lcg() - 0.5f) * 9.0f;
+        const float val = (lcg() - 0.5f) * 8.0f;
         row_base[y] = val;
         row_base[height - 1 - y] = val;
     }
 
-    // 2. Symmetric horizontal streak grids
+    // 2. Symmetric horizontal streak grids (fine multi-scale streaks without coarse macro blobs)
     constexpr int kK1 = 4;
     constexpr int kK2 = 8;
     constexpr int kK3 = 16;
@@ -68,12 +68,12 @@ std::vector<RgbaPixel> CdBrushedMetal::GeneratePixels(int width, int height, uin
         }
     }
 
-    // 3. Symmetric micro-grain buffer
+    // 3. Symmetric micro-grain buffer (crisp horizontal hairline scratches)
     std::vector<float> micro_half(half_y * half_x);
     for (int y = 0; y < half_y; ++y) {
         std::vector<float> raw(half_x);
         for (int x = 0; x < half_x; ++x) {
-            raw[x] = (lcg() - 0.5f) * 7.0f;
+            raw[x] = (lcg() - 0.5f) * 12.5f;
         }
         for (int x = 0; x < half_x; ++x) {
             const int prev_x = std::max(0, x - 1);
@@ -82,17 +82,9 @@ std::vector<RgbaPixel> CdBrushedMetal::GeneratePixels(int width, int height, uin
         }
     }
 
-    // 4. Symmetric specular highlight
-    std::vector<float> specular(width);
-    for (int x = 0; x < half_x; ++x) {
-        const float phi = (static_cast<float>(x) / static_cast<float>(half_x)) * kPi;
-        const float val = std::sin(phi) * 3.0f + std::sin(2.0f * phi) * 1.5f;
-        specular[x] = val;
-        specular[width - 1 - x] = val;
-    }
-
-    // 5. Evaluate half-quadrant and mirror symmetrically to all 4 quadrants
-    constexpr float kBaseLum = 28.0f;
+    // 4. Evaluate half-quadrant and mirror symmetrically to all 4 quadrants
+    // Brighter base luminance (~40.0) with uniform macro distribution (no tile-repeating wave)
+    constexpr float kBaseLum = 40.0f;
     for (int y = 0; y < half_y; ++y) {
         const float r_b = row_base[y];
         const float* row_g1 = &g1[y * kK1];
@@ -112,8 +104,8 @@ std::vector<RgbaPixel> CdBrushedMetal::GeneratePixels(int width, int height, uin
 
             const float s = sample_grid(row_g1, kK1) + sample_grid(row_g2, kK2) + sample_grid(row_g3, kK3);
             const float m = micro_half[y * half_x + x];
-            float lum = kBaseLum + r_b + s + m + specular[x];
-            lum = std::clamp(lum, 8.0f, 75.0f);
+            float lum = kBaseLum + r_b + s + m;
+            lum = std::clamp(lum, 10.0f, 95.0f);
 
             RgbaPixel px;
             px.r = static_cast<uint8_t>(std::clamp(lum * 0.96f, 0.0f, 255.0f));
@@ -129,10 +121,6 @@ std::vector<RgbaPixel> CdBrushedMetal::GeneratePixels(int width, int height, uin
     }
 
     return pixels;
-}
-
-bool CdBrushedMetal::Initialize(int tile_size) {
-    return Initialize(tile_size, tile_size);
 }
 
 bool CdBrushedMetal::Initialize(int width, int height) {
@@ -174,7 +162,7 @@ bool CdBrushedMetal::EnsureCapacity(int required_width, int required_height) {
     if (initialized_) {
         return true;
     }
-    return Initialize(kDefaultTileSize, kDefaultTileSize);
+    return Initialize(kDefaultTileSizeWidth, kDefaultTileSizeHeight);
 }
 
 void CdBrushedMetal::Shutdown() {
@@ -262,7 +250,7 @@ void CdBrushedMetal::RenderBackground(ImDrawList* draw_list, const ImVec2& scree
             }
         }
     } else {
-        draw_list->AddRectFilled(screen_pos, max_pos, IM_COL32(28, 28, 32, 255));
+        draw_list->AddRectFilled(screen_pos, max_pos, IM_COL32(38, 39, 42, 255));
     }
 
     // Overhead ambient light gradient across the faceplate

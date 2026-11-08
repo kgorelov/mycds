@@ -84,8 +84,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (!mycds::gui::GetBrushedMetal().Initialize(mycds::gui::CdBrushedMetal::kDefaultTileSize,
-                                                  mycds::gui::CdBrushedMetal::kDefaultTileSize)) {
+    if (!mycds::gui::GetBrushedMetal().Initialize(mycds::gui::CdBrushedMetal::kDefaultTileSizeWidth,
+                                                  mycds::gui::CdBrushedMetal::kDefaultTileSizeHeight)) {
         std::cerr << "Warning: Failed to initialize brushed metal texture\n";
     }
 

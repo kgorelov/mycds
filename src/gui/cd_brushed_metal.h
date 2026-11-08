@@ -17,7 +17,8 @@ struct RgbaPixel {
 
 class CdBrushedMetal {
 public:
-    static constexpr int kDefaultTileSize = 128;
+    static constexpr int kDefaultTileSizeWidth = 512;
+    static constexpr int kDefaultTileSizeHeight = 128;
 
     CdBrushedMetal() = default;
     ~CdBrushedMetal();
@@ -25,13 +26,12 @@ public:
     CdBrushedMetal(const CdBrushedMetal&) = delete;
     CdBrushedMetal& operator=(const CdBrushedMetal&) = delete;
 
-    bool Initialize(int tile_size = kDefaultTileSize);
     bool Initialize(int width, int height);
     void Shutdown();
 
     // With 128x128 symmetric tile rendering, no re-generation is needed when resizing.
     // EnsureCapacity/UpdateSize ensure initialization and return true immediately.
-    bool EnsureCapacity(int required_width = kDefaultTileSize, int required_height = kDefaultTileSize);
+    bool EnsureCapacity(int required_width = kDefaultTileSizeWidth, int required_height = kDefaultTileSizeHeight);
 
     bool UpdateSize(int required_width, int required_height) {
         return EnsureCapacity(required_width, required_height);
