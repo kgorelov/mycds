@@ -214,3 +214,111 @@ TEST(CdDisplayModelTests, VolumeLevelsStereoVariationAndPeakHold) {
 
     EXPECT_TRUE(saw_stereo_difference);
 }
+
+TEST(CdDisplayModelTests, StopFunctionality) {
+    CdDisplayModel model;
+
+    model.update(12.5);
+    EXPECT_GT(model.track_elapsed_seconds(), 0.0);
+    EXPECT_TRUE(model.is_playing());
+    EXPECT_GT(model.left_level(), 0.0);
+
+    model.stop();
+    EXPECT_FALSE(model.is_playing());
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+    EXPECT_EQ(model.elapsed_minutes(), 0);
+    EXPECT_EQ(model.elapsed_seconds(), 0);
+    EXPECT_DOUBLE_EQ(model.left_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_level(), 0.0);
+}
+
+TEST(CdDisplayModelTests, SeekingBehavior) {
+    CdDisplayModel model;
+
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+
+    // Seek forward 15s
+    model.seek_forward(15.0);
+    EXPECT_NEAR(model.track_elapsed_seconds(), 15.0, 0.001);
+
+    // Seek backward 5s
+    model.seek_backward(5.0);
+    EXPECT_NEAR(model.track_elapsed_seconds(), 10.0, 0.001);
+
+    // Seek backward more than elapsed: clamps to 0.0
+    model.seek_backward(20.0);
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+
+    // Seek past track duration advances to next track
+    const int dur = model.track_duration_seconds();
+    model.seek_forward(dur + 10.0);
+    EXPECT_EQ(model.current_track_number(), 2);
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+}
+
+TEST(CdDisplayModelTests, VolumeAndBalanceAdjustment) {
+    CdDisplayModel model;
+
+    EXPECT_DOUBLE_EQ(model.volume(), 0.8);
+    EXPECT_DOUBLE_EQ(model.balance(), 0.0);
+
+    model.set_volume(0.5);
+    EXPECT_DOUBLE_EQ(model.volume(), 0.5);
+
+    // Clamping volume
+    model.set_volume(1.5);
+    EXPECT_DOUBLE_EQ(model.volume(), 1.0);
+    model.set_volume(-0.5);
+    EXPECT_DOUBLE_EQ(model.volume(), 0.0);
+
+    // Zero volume silences output levels
+    model.update(0.1);
+    EXPECT_DOUBLE_EQ(model.left_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_level(), 0.0);
+
+    // Balance
+    model.set_volume(0.8);
+    model.set_balance(-1.0); // Full Left
+    EXPECT_DOUBLE_EQ(model.balance(), -1.0);
+    model.update(0.1);
+    EXPECT_GT(model.left_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_level(), 0.0);
+
+    model.set_balance(1.0); // Full Right
+    EXPECT_DOUBLE_EQ(model.balance(), 1.0);
+    // Allow VU ballistics decay time for left channel to settle to 0
+    model.update(1.5);
+    EXPECT_DOUBLE_EQ(model.left_level(), 0.0);
+    EXPECT_GT(model.right_level(), 0.0);
+
+    // Balance clamping
+    model.set_balance(2.5);
+    EXPECT_DOUBLE_EQ(model.balance(), 1.0);
+    model.set_balance(-2.5);
+    EXPECT_DOUBLE_EQ(model.balance(), -1.0);
+}
+
+TEST(CdDisplayModelTests, EjectDialogAndLoadDisc) {
+    CdDisplayModel model;
+
+    EXPECT_FALSE(model.is_eject_dialog_open());
+    model.open_eject_dialog();
+    EXPECT_TRUE(model.is_eject_dialog_open());
+    model.close_eject_dialog();
+    EXPECT_FALSE(model.is_eject_dialog_open());
+
+    const std::vector<TrackInfo> new_tracks = {
+        {1, 180, "Come Together"},
+        {2, 200, "Something"},
+        {3, 210, "Maxwell's Silver Hammer"}
+    };
+
+    model.load_disc("Abbey Road", new_tracks);
+    EXPECT_EQ(model.album_title(), "Abbey Road");
+    EXPECT_EQ(model.total_tracks(), 3);
+    EXPECT_EQ(model.current_track_number(), 1);
+    EXPECT_EQ(model.tracks()[0].title, "Come Together");
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+    EXPECT_TRUE(model.is_playing());
+    EXPECT_FALSE(model.is_eject_dialog_open());
+}

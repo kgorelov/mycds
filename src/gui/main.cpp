@@ -4,6 +4,7 @@
 #include <SDL3/SDL_opengl.h>
 
 #include "cd_brushed_metal.h"
+#include "cd_controls_widget.h"
 #include "cd_display_model.h"
 #include "cd_display_widget.h"
 #include "cd_playlist_widget.h"
@@ -130,6 +131,24 @@ int main(int argc, char* argv[]) {
         if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
             display_model.toggle_play_pause();
         }
+        if (ImGui::IsKeyPressed(ImGuiKey_X)) {
+            display_model.stop();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_E)) {
+            display_model.open_eject_dialog();
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
+            display_model.seek_backward(10.0 * static_cast<double>(io.DeltaTime));
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
+            display_model.seek_forward(10.0 * static_cast<double>(io.DeltaTime));
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) {
+            display_model.set_volume(display_model.volume() + 0.35 * static_cast<double>(io.DeltaTime));
+        }
+        if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) {
+            display_model.set_volume(display_model.volume() - 0.35 * static_cast<double>(io.DeltaTime));
+        }
         if (ImGui::IsKeyPressed(ImGuiKey_S)) {
             display_model.toggle_shuffle();
         }
@@ -226,56 +245,8 @@ int main(int argc, char* argv[]) {
             // Phase 2.3: LED volume indicator
             mycds::gui::RenderCdVolumeMeter(display_model, ImVec2(widget_w, 90.0f));
 
-            // Transport Controls Bar
-            const ImVec2 btn_size(90.0f, 34.0f);
-
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.18f, 0.21f, 0.90f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.27f, 0.31f, 0.95f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.13f, 0.13f, 0.15f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.38f, 0.40f, 0.46f, 0.75f));
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-
-            if (ImGui::Button("|<< Prev", btn_size)) {
-                display_model.prev_track();
-            }
-            ImGui::SameLine();
-
-            const char* play_label = display_model.is_playing() ? "|| Pause" : "> Play";
-            if (ImGui::Button(play_label, btn_size)) {
-                display_model.toggle_play_pause();
-            }
-            ImGui::SameLine();
-
-            if (ImGui::Button("Next >>|", btn_size)) {
-                display_model.next_track();
-            }
-            ImGui::SameLine();
-
-            const char* shuf_label = display_model.is_shuffle() ? "Shuffle [ON]" : "Shuffle [OFF]";
-            if (ImGui::Button(shuf_label, ImVec2(110.0f, 34.0f))) {
-                display_model.toggle_shuffle();
-            }
-            ImGui::SameLine();
-
-            const char* rep_label = (display_model.repeat_mode() == mycds::gui::RepeatMode::Off)
-                                        ? "Repeat [OFF]"
-                                        : ((display_model.repeat_mode() == mycds::gui::RepeatMode::Disc)
-                                               ? "Repeat [DISC]"
-                                               : "Repeat [1]");
-            if (ImGui::Button(rep_label, ImVec2(120.0f, 34.0f))) {
-                display_model.toggle_repeat();
-            }
-            ImGui::SameLine();
-
-            const bool conn = (display_model.connectivity_status() == mycds::gui::ConnectivityStatus::Connected);
-            const char* net_label = conn ? "Net: Online" : "Net: Offline";
-            if (ImGui::Button(net_label, ImVec2(115.0f, 34.0f))) {
-                display_model.toggle_connectivity();
-            }
-
-            ImGui::PopStyleVar(2);
-            ImGui::PopStyleColor(4);
+            // Phase 2.4: Controls Widget (Hardware buttons, backlit cyan pictograms, rotary knobs)
+            mycds::gui::RenderCdControls(display_model, ImVec2(widget_w, 116.0f));
         }
         ImGui::EndGroup();
 

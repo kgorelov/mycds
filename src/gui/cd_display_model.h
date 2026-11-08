@@ -38,7 +38,11 @@ public:
 
     void play();
     void pause();
+    void stop();
     void toggle_play_pause();
+
+    void seek_forward(double seconds);
+    void seek_backward(double seconds);
 
     void toggle_shuffle();
     void toggle_repeat();
@@ -47,6 +51,19 @@ public:
     void next_track();
     void prev_track();
     void jump_to_track(int track_number);
+
+    void set_volume(double vol);
+    [[nodiscard]] double volume() const;
+
+    void set_balance(double bal);
+    [[nodiscard]] double balance() const;
+
+    void open_eject_dialog();
+    void close_eject_dialog();
+    [[nodiscard]] bool is_eject_dialog_open() const;
+
+    void load_disc(const std::string& album_title, const std::vector<TrackInfo>& tracks);
+    [[nodiscard]] const std::string& album_title() const;
 
     void set_connectivity(ConnectivityStatus status);
     void toggle_connectivity();
@@ -78,6 +95,7 @@ public:
     void reset_volume_levels();
 
 private:
+    std::string album_title_{"The Dark Side of the Moon"};
     std::vector<TrackInfo> tracks_;
     size_t current_track_index_{0};
     double track_elapsed_seconds_{0.0};
@@ -86,6 +104,9 @@ private:
     bool shuffle_{false};
     RepeatMode repeat_mode_{RepeatMode::Off};
     ConnectivityStatus connectivity_{ConnectivityStatus::Connected};
+    double volume_{0.8};
+    double balance_{0.0};
+    bool eject_dialog_open_{false};
     VolumeLevels volume_levels_{};
     double left_peak_timer_{0.0};
     double right_peak_timer_{0.0};

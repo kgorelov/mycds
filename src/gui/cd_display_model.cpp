@@ -69,8 +69,16 @@ void CdDisplayModel::update(double delta_time_seconds) {
         const double pan_l = 0.5 + 0.35 * std::sin(t * 1.15 + 0.6);
         const double pan_r = 0.5 + 0.35 * std::cos(t * 1.35 + 0.3);
 
-        const double target_left = std::clamp(raw * (0.8 + 0.4 * pan_l), 0.06, 0.98);
-        const double target_right = std::clamp(raw * (0.8 + 0.4 * pan_r), 0.06, 0.98);
+        const double bal_left = (balance_ > 0.0) ? (1.0 - balance_) : 1.0;
+        const double bal_right = (balance_ < 0.0) ? (1.0 + balance_) : 1.0;
+        const double vol_gain = volume_;
+
+        const double target_left = (vol_gain <= 0.001 || bal_left <= 0.001)
+                                       ? 0.0
+                                       : std::clamp(raw * (0.8 + 0.4 * pan_l) * vol_gain * bal_left, 0.04, 0.98);
+        const double target_right = (vol_gain <= 0.001 || bal_right <= 0.001)
+                                        ? 0.0
+                                        : std::clamp(raw * (0.8 + 0.4 * pan_r) * vol_gain * bal_right, 0.04, 0.98);
 
         // VU meter ballistics: fast attack (~32.0/s), smooth decay (~7.5/s)
         constexpr double attack_rate = 32.0;
@@ -131,11 +139,39 @@ void CdDisplayModel::pause() {
     reset_volume_levels();
 }
 
+void CdDisplayModel::stop() {
+    playing_ = false;
+    track_elapsed_seconds_ = 0.0;
+    reset_volume_levels();
+}
+
 void CdDisplayModel::toggle_play_pause() {
     playing_ = !playing_;
     if (!playing_) {
         reset_volume_levels();
     }
+}
+
+void CdDisplayModel::seek_forward(double seconds) {
+    if (seconds <= 0.0 || tracks_.empty()) {
+        return;
+    }
+    track_elapsed_seconds_ += seconds;
+    const int duration = track_duration_seconds();
+    if (track_elapsed_seconds_ >= static_cast<double>(duration)) {
+        if (current_track_index_ + 1 < tracks_.size()) {
+            next_track();
+        } else {
+            track_elapsed_seconds_ = std::max(0.0, static_cast<double>(duration) - 0.1);
+        }
+    }
+}
+
+void CdDisplayModel::seek_backward(double seconds) {
+    if (seconds <= 0.0) {
+        return;
+    }
+    track_elapsed_seconds_ = std::max(0.0, track_elapsed_seconds_ - seconds);
 }
 
 void CdDisplayModel::toggle_shuffle() {
@@ -310,6 +346,50 @@ void CdDisplayModel::reset_volume_levels() {
     volume_levels_ = {0.0, 0.0, 0.0, 0.0};
     left_peak_timer_ = 0.0;
     right_peak_timer_ = 0.0;
+}
+
+void CdDisplayModel::set_volume(double vol) {
+    volume_ = std::clamp(vol, 0.0, 1.0);
+}
+
+double CdDisplayModel::volume() const {
+    return volume_;
+}
+
+void CdDisplayModel::set_balance(double bal) {
+    balance_ = std::clamp(bal, -1.0, 1.0);
+}
+
+double CdDisplayModel::balance() const {
+    return balance_;
+}
+
+void CdDisplayModel::open_eject_dialog() {
+    eject_dialog_open_ = true;
+}
+
+void CdDisplayModel::close_eject_dialog() {
+    eject_dialog_open_ = false;
+}
+
+bool CdDisplayModel::is_eject_dialog_open() const {
+    return eject_dialog_open_;
+}
+
+void CdDisplayModel::load_disc(const std::string& album_title, const std::vector<TrackInfo>& tracks) {
+    if (tracks.empty()) {
+        return;
+    }
+    album_title_ = album_title;
+    tracks_ = tracks;
+    current_track_index_ = 0;
+    track_elapsed_seconds_ = 0.0;
+    playing_ = true;
+    eject_dialog_open_ = false;
+}
+
+const std::string& CdDisplayModel::album_title() const {
+    return album_title_;
 }
 
 } // namespace mycds::gui

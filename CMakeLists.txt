@@ -148,6 +148,7 @@ target_link_libraries(cdplayer PRIVATE
 # 6. GUI executable
 add_executable(mycds
     src/gui/cd_brushed_metal.cpp
+    src/gui/cd_controls_widget.cpp
     src/gui/cd_display_model.cpp
     src/gui/cd_display_widget.cpp
     src/gui/cd_playlist_widget.cpp
@@ -319,4 +320,26 @@ if(GTest_FOUND)
         GTest::gtest_main
     )
     add_test(NAME cd_brushed_metal_tests COMMAND cd_brushed_metal_tests)
+
+    add_executable(cd_controls_widget_tests
+        tests/cd_controls_widget_tests.cpp
+        src/gui/cd_controls_widget.cpp
+        src/gui/cd_display_model.cpp
+        src/gui/cd_brushed_metal.cpp
+    )
+    target_compile_options(cd_controls_widget_tests PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+    target_include_directories(cd_controls_widget_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui"
+    )
+    target_link_libraries(cd_controls_widget_tests PRIVATE
+        imgui
+        OpenGL::GL
+        GTest::gtest_main
+    )
+    add_test(NAME cd_controls_widget_tests COMMAND cd_controls_widget_tests)
 endif()
