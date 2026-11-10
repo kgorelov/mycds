@@ -29,7 +29,31 @@ void CdDisplayModel::update(double delta_time_seconds) {
     }
     uptime_seconds_ += delta_time_seconds;
 
-    if (playing_ && !tracks_.empty()) {
+    if (recording_) {
+        if (tracks_.empty()) {
+            recording_ = false;
+            current_track_index_ = 0;
+            track_elapsed_seconds_ = 0.0;
+        } else {
+            // High-speed optical CD image ripping simulation across all tracks
+            constexpr double kRecordSeekSpeed = 350.0;
+            track_elapsed_seconds_ += delta_time_seconds * kRecordSeekSpeed;
+            const int duration = track_duration_seconds();
+            if (track_elapsed_seconds_ >= static_cast<double>(duration)) {
+                if (current_track_index_ + 1 < tracks_.size()) {
+                    ++current_track_index_;
+                    track_elapsed_seconds_ = 0.0;
+                } else {
+                    // Completed ripping final track: return timer to amber, reset to track 1 00:00
+                    recording_ = false;
+                    current_track_index_ = 0;
+                    track_elapsed_seconds_ = 0.0;
+                    playing_ = false;
+                    reset_volume_levels();
+                }
+            }
+        }
+    } else if (playing_ && !tracks_.empty()) {
         track_elapsed_seconds_ += delta_time_seconds;
         const int duration = track_duration_seconds();
         if (track_elapsed_seconds_ >= static_cast<double>(duration)) {
@@ -41,7 +65,7 @@ void CdDisplayModel::update(double delta_time_seconds) {
         }
     }
 
-    if (!playing_ || tracks_.empty()) {
+    if (!playing_ || tracks_.empty() || recording_) {
         reset_volume_levels();
     } else {
         // Audio synthesis simulation for volume meter
@@ -131,21 +155,32 @@ void CdDisplayModel::update(double delta_time_seconds) {
 }
 
 void CdDisplayModel::play() {
+    if (recording_) {
+        return;
+    }
     playing_ = true;
 }
 
 void CdDisplayModel::pause() {
+    if (recording_) {
+        return;
+    }
     playing_ = false;
     reset_volume_levels();
 }
 
 void CdDisplayModel::stop() {
+    recording_ = false;
     playing_ = false;
+    current_track_index_ = 0;
     track_elapsed_seconds_ = 0.0;
     reset_volume_levels();
 }
 
 void CdDisplayModel::toggle_play_pause() {
+    if (recording_) {
+        return;
+    }
     playing_ = !playing_;
     if (!playing_) {
         reset_volume_levels();
@@ -153,7 +188,7 @@ void CdDisplayModel::toggle_play_pause() {
 }
 
 void CdDisplayModel::seek_forward(double seconds) {
-    if (seconds <= 0.0 || tracks_.empty()) {
+    if (recording_ || seconds <= 0.0 || tracks_.empty()) {
         return;
     }
     track_elapsed_seconds_ += seconds;
@@ -168,7 +203,7 @@ void CdDisplayModel::seek_forward(double seconds) {
 }
 
 void CdDisplayModel::seek_backward(double seconds) {
-    if (seconds <= 0.0 || tracks_.empty()) {
+    if (recording_ || seconds <= 0.0 || tracks_.empty()) {
         return;
     }
     track_elapsed_seconds_ -= seconds;
@@ -180,6 +215,32 @@ void CdDisplayModel::seek_backward(double seconds) {
             track_elapsed_seconds_ = 0.0;
         }
     }
+}
+
+void CdDisplayModel::start_recording() {
+    if (recording_ || tracks_.empty()) {
+        return;
+    }
+    recording_ = true;
+    playing_ = false;
+    current_track_index_ = 0;
+    track_elapsed_seconds_ = 0.0;
+    reset_volume_levels();
+}
+
+void CdDisplayModel::stop_recording() {
+    if (!recording_) {
+        return;
+    }
+    recording_ = false;
+    current_track_index_ = 0;
+    track_elapsed_seconds_ = 0.0;
+    playing_ = false;
+    reset_volume_levels();
+}
+
+bool CdDisplayModel::is_recording() const {
+    return recording_;
 }
 
 void CdDisplayModel::toggle_shuffle() {
@@ -205,6 +266,9 @@ void CdDisplayModel::set_repeat_mode(RepeatMode mode) {
 }
 
 void CdDisplayModel::next_track() {
+    if (recording_) {
+        return;
+    }
     track_elapsed_seconds_ = 0.0;
     if (tracks_.empty()) {
         return;
@@ -227,6 +291,9 @@ void CdDisplayModel::next_track() {
 }
 
 void CdDisplayModel::prev_track() {
+    if (recording_) {
+        return;
+    }
     if (track_elapsed_seconds_ > 2.0) {
         track_elapsed_seconds_ = 0.0;
         return;
@@ -245,6 +312,9 @@ void CdDisplayModel::prev_track() {
 }
 
 void CdDisplayModel::jump_to_track(int track_number) {
+    if (recording_) {
+        return;
+    }
     if (track_number < 1 || track_number > static_cast<int>(tracks_.size())) {
         return;
     }
@@ -390,6 +460,7 @@ void CdDisplayModel::load_disc(const std::string& album_title, const std::vector
     }
     album_title_ = album_title;
     tracks_ = tracks;
+    recording_ = false;
     current_track_index_ = 0;
     track_elapsed_seconds_ = 0.0;
     playing_ = true;

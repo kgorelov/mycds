@@ -164,6 +164,9 @@ int main(int argc, char* argv[]) {
         if (ImGui::IsKeyPressed(ImGuiKey_C)) {
             display_model.toggle_connectivity();
         }
+        if (ImGui::IsKeyPressed(ImGuiKey_D)) {
+            display_model.start_recording();
+        }
 
         // Direct track selection (1-9 for tracks 1-9, 0 for track 10)
         if (ImGui::IsKeyPressed(ImGuiKey_1) || ImGui::IsKeyPressed(ImGuiKey_Keypad1)) {

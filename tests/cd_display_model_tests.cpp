@@ -327,3 +327,67 @@ TEST(CdDisplayModelTests, EjectDialogAndLoadDisc) {
     EXPECT_TRUE(model.is_playing());
     EXPECT_FALSE(model.is_eject_dialog_open());
 }
+
+TEST(CdDisplayModelTests, RecordEmulationLifecycle) {
+    CdDisplayModel model;
+
+    EXPECT_FALSE(model.is_recording());
+
+    const std::vector<TrackInfo> short_album = {
+        {1, 100, "Track One"},
+        {2, 100, "Track Two"},
+        {3, 100, "Track Three"}
+    };
+    model.load_disc("Test Album", short_album);
+    EXPECT_FALSE(model.is_recording());
+    EXPECT_EQ(model.total_tracks(), 3);
+
+    // Start recording emulation
+    model.start_recording();
+    EXPECT_TRUE(model.is_recording());
+    EXPECT_FALSE(model.is_playing());
+    EXPECT_EQ(model.current_track_number(), 1);
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+
+    // Fast seek speed is 350.0 audio seconds / real second.
+    // 0.1 real seconds advances 35.0s of track 1
+    model.update(0.1);
+    EXPECT_TRUE(model.is_recording());
+    EXPECT_EQ(model.current_track_number(), 1);
+    EXPECT_NEAR(model.track_elapsed_seconds(), 35.0, 0.01);
+
+    // Another 0.2s (total 0.3s -> 105s audio) completes track 1 (100s) and advances to track 2
+    model.update(0.2);
+    EXPECT_TRUE(model.is_recording());
+    EXPECT_EQ(model.current_track_number(), 2);
+
+    // Advance through track 2 (100s / 350.0 ~ 0.286s) into track 3
+    model.update(0.35);
+    EXPECT_TRUE(model.is_recording());
+    EXPECT_EQ(model.current_track_number(), 3);
+
+    // Advance past end of track 3: process finishes, resets to track 1 00:00, turns amber (not recording)
+    model.update(0.4);
+    EXPECT_FALSE(model.is_recording());
+    EXPECT_EQ(model.current_track_number(), 1);
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+    EXPECT_EQ(model.elapsed_minutes(), 0);
+    EXPECT_EQ(model.elapsed_seconds(), 0);
+    EXPECT_FALSE(model.is_playing());
+}
+
+TEST(CdDisplayModelTests, RecordEmulationStopInterrupt) {
+    CdDisplayModel model;
+    model.start_recording();
+    EXPECT_TRUE(model.is_recording());
+
+    model.update(0.2);
+    EXPECT_GT(model.track_elapsed_seconds(), 0.0);
+
+    // Stop cancels recording and resets to track 1 00:00
+    model.stop();
+    EXPECT_FALSE(model.is_recording());
+    EXPECT_EQ(model.current_track_number(), 1);
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+    EXPECT_FALSE(model.is_playing());
+}

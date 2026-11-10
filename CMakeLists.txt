@@ -324,6 +324,7 @@ if(GTest_FOUND)
     add_executable(cd_controls_widget_tests
         tests/cd_controls_widget_tests.cpp
         src/gui/cd_controls_widget.cpp
+        src/gui/cd_display_widget.cpp
         src/gui/cd_display_model.cpp
         src/gui/cd_brushed_metal.cpp
     )

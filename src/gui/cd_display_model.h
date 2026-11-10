@@ -44,6 +44,10 @@ public:
     void seek_forward(double seconds);
     void seek_backward(double seconds);
 
+    void start_recording();
+    void stop_recording();
+    [[nodiscard]] bool is_recording() const;
+
     void toggle_shuffle();
     void toggle_repeat();
     void set_repeat_mode(RepeatMode mode);
@@ -101,6 +105,7 @@ private:
     double track_elapsed_seconds_{0.0};
     double uptime_seconds_{0.0};
     bool playing_{true};
+    bool recording_{false};
     bool shuffle_{false};
     RepeatMode repeat_mode_{RepeatMode::Off};
     ConnectivityStatus connectivity_{ConnectivityStatus::Connected};

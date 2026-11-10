@@ -5,6 +5,7 @@
 
 #include "gui/cd_controls_widget.h"
 #include "gui/cd_display_model.h"
+#include "gui/cd_display_widget.h"
 #include "imgui.h"
 
 using namespace mycds::gui;
@@ -154,6 +155,63 @@ TEST_F(CdControlsWidgetTest, RenderCdControlsWithEjectModalOpen) {
     RenderCdControls(model, ImVec2(680.0f, 116.0f));
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ASSERT_NE(draw_list, nullptr);
+    EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
+
+    ImGui::End();
+    ImGui::Render();
+}
+
+TEST_F(CdControlsWidgetTest, RenderCdControlsWhileRecording) {
+    CdDisplayModel model;
+    model.start_recording();
+    EXPECT_TRUE(model.is_recording());
+
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(1460, 600));
+    ImGui::Begin("TestWindow", nullptr, ImGuiWindowFlags_NoDecoration);
+
+    RenderCdControls(model, ImVec2(680.0f, 116.0f));
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ASSERT_NE(draw_list, nullptr);
+    EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
+
+    ImGui::End();
+    ImGui::Render();
+}
+
+TEST_F(CdControlsWidgetTest, RenderCdDisplayInRecordingAndNormalModes) {
+    CdDisplayModel model;
+
+    // Normal amber mode
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(1460, 600));
+    ImGui::Begin("TestWindowAmber", nullptr, ImGuiWindowFlags_NoDecoration);
+
+    RenderCdDisplay(model, ImVec2(680.0f, 250.0f));
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ASSERT_NE(draw_list, nullptr);
+    EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
+
+    ImGui::End();
+    ImGui::Render();
+
+    // Red recording mode
+    model.start_recording();
+    EXPECT_TRUE(model.is_recording());
+
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(1460, 600));
+    ImGui::Begin("TestWindowRedRec", nullptr, ImGuiWindowFlags_NoDecoration);
+
+    RenderCdDisplay(model, ImVec2(680.0f, 250.0f));
+
+    draw_list = ImGui::GetWindowDrawList();
     ASSERT_NE(draw_list, nullptr);
     EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
 

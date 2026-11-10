@@ -11,7 +11,7 @@ namespace mycds::gui {
 ///   - Backlit cyan-blue graphical pictograms.
 ///   - Tactile hardware look and feel (recessed socket slots, 3D chamfers, pressed state).
 ///   - Normal square buttons: Play/Pause (> ||), Stop, Prev (seek backward on hold),
-///     Next (seek forward on hold), and Eject (load dialog).
+///     Next (seek forward on hold), Record (classic red circle), and Eject (load dialog).
 ///   - Two half-size stacked buttons: Shuffle and Repeat.
 ///   - Two precision-machined rotary knobs: Volume and Balance with cyan-lit pointers,
 ///     knurled grips, arc ticks, and drag/scroll interaction.

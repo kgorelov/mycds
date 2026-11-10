@@ -313,6 +313,38 @@ void DrawEjectPictogram(ImDrawList* draw_list, const ImVec2& center, bool hovere
     DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, core_col, is_bright);
 }
 
+void DrawRecordPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_recording, bool hovered, bool pressed) {
+    const bool is_bright = is_recording || pressed;
+    const ImU32 red_core = is_bright ? IM_COL32(255, 65, 55, 255)
+                                     : (hovered ? IM_COL32(245, 50, 40, 240) : IM_COL32(195, 30, 25, 220));
+    constexpr float radius = 8.5f;
+
+    // Subtle drop shadow
+    draw_list->AddCircleFilled(ImVec2(center.x + 1.0f, center.y + 1.2f), radius, IM_COL32(10, 14, 20, 80));
+
+    // Multi-tier diffuse bloom halos when active, recording, or hovered
+    if (is_bright || hovered) {
+        const ImU32 bloom_outer = is_bright ? IM_COL32(255, 40, 30, 40) : IM_COL32(220, 30, 25, 25);
+        const ImU32 bloom_mid   = is_bright ? IM_COL32(255, 50, 40, 80) : IM_COL32(230, 40, 30, 50);
+        const ImU32 bloom_inner = is_bright ? IM_COL32(255, 90, 80, 150) : IM_COL32(240, 70, 60, 90);
+
+        draw_list->AddCircle(center, radius + 4.5f, bloom_outer, 0, 4.0f);
+        draw_list->AddCircle(center, radius + 2.5f, bloom_mid, 0, 2.5f);
+        draw_list->AddCircle(center, radius + 1.0f, bloom_inner, 0, 1.2f);
+    }
+
+    // Outer machined ring bezel around the red circle for a precision hardware feel
+    draw_list->AddCircle(center, radius + 1.5f, IM_COL32(30, 32, 38, 200), 0, 1.2f);
+
+    // Red lens core fill
+    draw_list->AddCircleFilled(center, radius, red_core);
+
+    // Subtle specular curved lens highlight on upper arc
+    draw_list->PathArcTo(ImVec2(center.x, center.y - 1.0f), radius * 0.65f,
+                         -0.85f * kPi, -0.15f * kPi, 12);
+    draw_list->PathStroke(IM_COL32(255, 200, 200, is_bright ? 180 : 120), 0, 1.2f);
+}
+
 void DrawShufflePictogram(ImDrawList* draw_list, const ImVec2& center, bool is_active, bool hovered, bool pressed) {
     const bool is_bright = is_active || pressed;
     const ImU32 core_col = is_bright ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
@@ -777,15 +809,15 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
     draw_screw(ImVec2(panel_min.x + 10.0f, panel_max.y - 10.0f));
     draw_screw(ImVec2(panel_max.x - 10.0f, panel_max.y - 10.0f));
 
-    // Layout geometry: slightly bigger buttons (62x62 normal, 62x28 half-size)
-    constexpr float kNormalBtnSize = 62.0f;
-    constexpr float kHalfBtnWidth = 62.0f;
-    constexpr float kHalfBtnHeight = 28.0f;
-    constexpr float kBtnGap = 8.0f;
-    constexpr float kKnobRadius = 23.0f;
+    // Layout geometry: 56x56 normal square buttons, 56x26 half-size buttons
+    constexpr float kNormalBtnSize = 56.0f;
+    constexpr float kHalfBtnWidth = 56.0f;
+    constexpr float kHalfBtnHeight = 26.0f;
+    constexpr float kBtnGap = 7.0f;
+    constexpr float kKnobRadius = 22.0f;
 
     const float btn_start_y = panel_min.y + (panel_height - kNormalBtnSize) * 0.5f;
-    float current_x = panel_min.x + 22.0f;
+    float current_x = panel_min.x + 18.0f;
 
     // Helper lambda for rendering a standard hardware button
     auto RenderHardwareButton = [&](const char* id, const ImVec2& pos, const ImVec2& btn_sz, auto draw_pictogram) {
@@ -943,11 +975,25 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
     if (next_hovered) {
         ImGui::SetTooltip("Next Track (Hold to seek forward)");
     }
-    current_x += kNormalBtnSize + 12.0f;
+    current_x += kNormalBtnSize + kBtnGap;
 
-    // 6. Two smaller half-size buttons one on top of the other: Shuffle and Repeat
+    // 6. Record button (classic look: button with red circle in middle)
+    const ImVec2 record_pos(current_x, btn_start_y);
+    if (RenderHardwareButton("##BtnRecord", record_pos, ImVec2(kNormalBtnSize, kNormalBtnSize),
+                            [&](const ImVec2& c, bool h, bool a) {
+                                DrawRecordPictogram(draw_list, c, model.is_recording(), h, a);
+                            })) {
+        model.start_recording();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Record CD Image to Library (Emulate Ripping)%s",
+                          model.is_recording() ? " [Recording in progress...]" : "");
+    }
+    current_x += kNormalBtnSize + 10.0f;
+
+    // 7. Two smaller half-size buttons one on top of the other: Shuffle and Repeat
     const ImVec2 shuffle_pos(current_x, btn_start_y);
-    const ImVec2 repeat_pos(current_x, btn_start_y + kHalfBtnHeight + 6.0f);
+    const ImVec2 repeat_pos(current_x, btn_start_y + kHalfBtnHeight + 4.0f);
 
     // Shuffle button
     if (RenderHardwareButton("##BtnShuffle", shuffle_pos, ImVec2(kHalfBtnWidth, kHalfBtnHeight),
@@ -972,28 +1018,28 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
             ? "OFF" : ((model.repeat_mode() == RepeatMode::Disc) ? "DISC" : "TRACK");
         ImGui::SetTooltip("Repeat Mode [R]: %s", rep_str);
     }
-    current_x += kHalfBtnWidth + 16.0f;
+    current_x += kHalfBtnWidth + 14.0f;
 
     // Vertical precision divider line separating buttons and knobs
     const float div_x = current_x - 3.0f;
     draw_list->AddLine(ImVec2(div_x, panel_min.y + 16.0f), ImVec2(div_x, panel_max.y - 16.0f), IM_COL32(18, 20, 24, 255), 1.0f);
     draw_list->AddLine(ImVec2(div_x + 1.0f, panel_min.y + 16.0f), ImVec2(div_x + 1.0f, panel_max.y - 16.0f), IM_COL32(65, 70, 80, 140), 1.0f);
-    current_x += 16.0f;
+    current_x += 14.0f;
 
-    // 7. Two round knobs next to each other: Volume and Balance
+    // 8. Two round knobs next to each other: Volume and Balance
     const float knob_center_y = panel_min.y + 44.0f;
 
     // Volume Knob
-    const ImVec2 vol_center(current_x + kKnobRadius + 14.0f, knob_center_y);
+    const ImVec2 vol_center(current_x + kKnobRadius + 10.0f, knob_center_y);
     float vol_val = static_cast<float>(model.volume());
     RenderHardwareKnob("##KnobVolume", "VOLUME", &vol_val, 0.0f, 1.0f, 0.8f, vol_center, kKnobRadius, false);
     if (static_cast<double>(vol_val) != model.volume()) {
         model.set_volume(static_cast<double>(vol_val));
     }
-    current_x += (kKnobRadius * 2.0f) + 48.0f;
+    current_x += (kKnobRadius * 2.0f) + 40.0f;
 
     // Balance Knob
-    const ImVec2 bal_center(current_x + kKnobRadius + 14.0f, knob_center_y);
+    const ImVec2 bal_center(current_x + kKnobRadius + 10.0f, knob_center_y);
     float bal_val = static_cast<float>(model.balance());
     RenderHardwareKnob("##KnobBalance", "BALANCE", &bal_val, -1.0f, 1.0f, 0.0f, bal_center, kKnobRadius, true);
     if (static_cast<double>(bal_val) != model.balance()) {

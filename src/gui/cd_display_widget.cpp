@@ -22,6 +22,7 @@ constexpr ImU32 kGreenUnlit   = IM_COL32(14, 42, 18, 220);
 
 constexpr ImU32 kRedLitCore   = IM_COL32(255, 60, 50, 255);
 constexpr ImU32 kRedLitGlow   = IM_COL32(230, 40, 30, 85);
+constexpr ImU32 kRedUnlit     = IM_COL32(46, 14, 12, 210);
 
 constexpr ImU32 kGlassBg      = IM_COL32(10, 8, 7, 255);
 constexpr ImU32 kBezelDark    = IM_COL32(18, 18, 20, 255);
@@ -57,7 +58,10 @@ void DrawSlantedPoly(ImDrawList* draw_list, const ImVec2* pts, int count,
 }
 
 void DrawSevenSegmentDigit(ImDrawList* draw_list, ImVec2 origin, ImVec2 size,
-                           char c, float slant_factor = 0.08f) {
+                           char c, float slant_factor = 0.08f,
+                           ImU32 lit_core = kAmberLitCore,
+                           ImU32 lit_glow = kAmberLitGlow,
+                           ImU32 unlit_col = kAmberUnlit) {
     const uint8_t mask = GetSegmentMask(c);
     const float w = size.x;
     const float h = size.y;
@@ -80,8 +84,8 @@ void DrawSevenSegmentDigit(ImDrawList* draw_list, ImVec2 origin, ImVec2 size,
             slant(g + t, g + t)
         };
         DrawSlantedPoly(draw_list, pts, 4,
-                        lit ? kAmberLitCore : kAmberUnlit,
-                        kAmberLitGlow, lit);
+                        lit ? lit_core : unlit_col,
+                        lit_glow, lit);
     }
 
     // Segment B (Top-Right)
@@ -94,8 +98,8 @@ void DrawSevenSegmentDigit(ImDrawList* draw_list, ImVec2 origin, ImVec2 size,
             slant(w - g - t, ym - g * 0.5f - t * 0.5f)
         };
         DrawSlantedPoly(draw_list, pts, 4,
-                        lit ? kAmberLitCore : kAmberUnlit,
-                        kAmberLitGlow, lit);
+                        lit ? lit_core : unlit_col,
+                        lit_glow, lit);
     }
 
     // Segment C (Bottom-Right)
@@ -108,8 +112,8 @@ void DrawSevenSegmentDigit(ImDrawList* draw_list, ImVec2 origin, ImVec2 size,
             slant(w - g - t, h - g - t - b)
         };
         DrawSlantedPoly(draw_list, pts, 4,
-                        lit ? kAmberLitCore : kAmberUnlit,
-                        kAmberLitGlow, lit);
+                        lit ? lit_core : unlit_col,
+                        lit_glow, lit);
     }
 
     // Segment D (Bottom)
@@ -122,8 +126,8 @@ void DrawSevenSegmentDigit(ImDrawList* draw_list, ImVec2 origin, ImVec2 size,
             slant(g + b, h - g)
         };
         DrawSlantedPoly(draw_list, pts, 4,
-                        lit ? kAmberLitCore : kAmberUnlit,
-                        kAmberLitGlow, lit);
+                        lit ? lit_core : unlit_col,
+                        lit_glow, lit);
     }
 
     // Segment E (Bottom-Left)
@@ -136,8 +140,8 @@ void DrawSevenSegmentDigit(ImDrawList* draw_list, ImVec2 origin, ImVec2 size,
             slant(g, h - g - b)
         };
         DrawSlantedPoly(draw_list, pts, 4,
-                        lit ? kAmberLitCore : kAmberUnlit,
-                        kAmberLitGlow, lit);
+                        lit ? lit_core : unlit_col,
+                        lit_glow, lit);
     }
 
     // Segment F (Top-Left)
@@ -150,8 +154,8 @@ void DrawSevenSegmentDigit(ImDrawList* draw_list, ImVec2 origin, ImVec2 size,
             slant(g, ym - g * 0.5f - b)
         };
         DrawSlantedPoly(draw_list, pts, 4,
-                        lit ? kAmberLitCore : kAmberUnlit,
-                        kAmberLitGlow, lit);
+                        lit ? lit_core : unlit_col,
+                        lit_glow, lit);
     }
 
     // Segment G (Middle)
@@ -166,13 +170,16 @@ void DrawSevenSegmentDigit(ImDrawList* draw_list, ImVec2 origin, ImVec2 size,
             slant(g + t, ym + t * 0.5f)
         };
         DrawSlantedPoly(draw_list, pts, 6,
-                        lit ? kAmberLitCore : kAmberUnlit,
-                        kAmberLitGlow, lit);
+                        lit ? lit_core : unlit_col,
+                        lit_glow, lit);
     }
 }
 
 void DrawColon(ImDrawList* draw_list, ImVec2 origin, ImVec2 size, bool lit,
-               float slant_factor = 0.08f) {
+               float slant_factor = 0.08f,
+               ImU32 lit_core = kAmberLitCore,
+               ImU32 lit_glow = kAmberLitGlow,
+               ImU32 unlit_col = kAmberUnlit) {
     const float w = size.x;
     const float h = size.y;
     const float r = w * 0.22f;
@@ -186,13 +193,13 @@ void DrawColon(ImDrawList* draw_list, ImVec2 origin, ImVec2 size, bool lit,
     const ImVec2 c2 = slant(w * 0.5f, ym + h * 0.18f);
 
     if (lit) {
-        draw_list->AddCircleFilled(c1, r + 2.0f, kAmberLitGlow);
-        draw_list->AddCircleFilled(c2, r + 2.0f, kAmberLitGlow);
-        draw_list->AddCircleFilled(c1, r, kAmberLitCore);
-        draw_list->AddCircleFilled(c2, r, kAmberLitCore);
+        draw_list->AddCircleFilled(c1, r + 2.0f, lit_glow);
+        draw_list->AddCircleFilled(c2, r + 2.0f, lit_glow);
+        draw_list->AddCircleFilled(c1, r, lit_core);
+        draw_list->AddCircleFilled(c2, r, lit_core);
     } else {
-        draw_list->AddCircleFilled(c1, r, kAmberUnlit);
-        draw_list->AddCircleFilled(c2, r, kAmberUnlit);
+        draw_list->AddCircleFilled(c1, r, unlit_col);
+        draw_list->AddCircleFilled(c2, r, unlit_col);
     }
 }
 
@@ -366,20 +373,26 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
     draw_list->AddText(ImVec2(glass_min.x + 20.0f, header_y),
                        IM_COL32(160, 110, 50, 180), "COMPACT DISC DIGITAL AUDIO");
 
-    // Play / Pause amber status indicator
+    // Status indicators
+    const bool is_rec = model.is_recording();
     const bool is_play = model.is_playing();
     const ImU32 play_col = is_play ? kAmberLitCore : kAmberUnlit;
-    const ImU32 pause_col = !is_play ? kAmberLitCore : kAmberUnlit;
+    const ImU32 pause_col = (!is_play && !is_rec) ? kAmberLitCore : kAmberUnlit;
 
     if (is_play) {
         draw_list->AddText(ImVec2(glass_min.x + 280.0f, header_y), kAmberLitGlow, "> PLAY");
     }
     draw_list->AddText(ImVec2(glass_min.x + 280.0f, header_y), play_col, "> PLAY");
 
-    if (!is_play) {
+    if (!is_play && !is_rec) {
         draw_list->AddText(ImVec2(glass_min.x + 345.0f, header_y), kAmberLitGlow, "|| PAUSE");
     }
     draw_list->AddText(ImVec2(glass_min.x + 345.0f, header_y), pause_col, "|| PAUSE");
+
+    if (is_rec) {
+        draw_list->AddText(ImVec2(glass_min.x + 420.0f, header_y), kRedLitGlow, "[o] REC");
+        draw_list->AddText(ImVec2(glass_min.x + 420.0f, header_y), kRedLitCore, "[o] REC");
+    }
 
     // Track and Time Headers above 7-segment displays
     const float seg_y = glass_min.y + 36.0f;
@@ -397,11 +410,12 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
     draw_list->AddText(ImVec2(glass_min.x + 145.0f, seg_y + 40.0f),
                        IM_COL32(150, 100, 40, 190), total_tracks_buf);
 
-    // "MIN" and "SEC" labels
+    // "MIN" and "SEC" labels (turn red during recording emulation, normal amber otherwise)
+    const ImU32 label_time_col = is_rec ? IM_COL32(230, 70, 60, 220) : IM_COL32(180, 130, 60, 200);
     draw_list->AddText(ImVec2(glass_min.x + 295.0f, seg_y - 2.0f),
-                       IM_COL32(180, 130, 60, 200), "MIN");
+                       label_time_col, "MIN");
     draw_list->AddText(ImVec2(glass_min.x + 440.0f, seg_y - 2.0f),
-                       IM_COL32(180, 130, 60, 200), "SEC");
+                       label_time_col, "SEC");
 
     // 7-Segment Values
     char track_buf[8];
@@ -415,7 +429,7 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
 
     const float digits_start_y = seg_y + 14.0f;
 
-    // Track Digits (2 digits)
+    // Track Digits (2 digits - normal amber)
     float cur_x = glass_min.x + 35.0f;
     DrawSevenSegmentDigit(draw_list, ImVec2(cur_x, digits_start_y),
                           ImVec2(seg_digit_w, seg_digit_h), track_buf[0]);
@@ -423,31 +437,41 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
     DrawSevenSegmentDigit(draw_list, ImVec2(cur_x, digits_start_y),
                           ImVec2(seg_digit_w, seg_digit_h), track_buf[1]);
 
+    // Time Counter Digits: red when recording, amber when normal
+    const ImU32 timer_lit_core = is_rec ? kRedLitCore : kAmberLitCore;
+    const ImU32 timer_lit_glow = is_rec ? kRedLitGlow : kAmberLitGlow;
+    const ImU32 timer_unlit_col = is_rec ? kRedUnlit : kAmberUnlit;
+
     // Time Digits (Minutes : Seconds)
     cur_x = glass_min.x + 265.0f;
     DrawSevenSegmentDigit(draw_list, ImVec2(cur_x, digits_start_y),
-                          ImVec2(seg_digit_w, seg_digit_h), min_buf[0]);
+                          ImVec2(seg_digit_w, seg_digit_h), min_buf[0], 0.08f,
+                          timer_lit_core, timer_lit_glow, timer_unlit_col);
     cur_x += seg_digit_w + seg_digit_gap;
     DrawSevenSegmentDigit(draw_list, ImVec2(cur_x, digits_start_y),
-                          ImVec2(seg_digit_w, seg_digit_h), min_buf[1]);
+                          ImVec2(seg_digit_w, seg_digit_h), min_buf[1], 0.08f,
+                          timer_lit_core, timer_lit_glow, timer_unlit_col);
     cur_x += seg_digit_w + 6.0f;
 
-    // Colon between Min and Sec: blinks when paused, solid when playing
+    // Colon between Min and Sec: solid when playing or recording, blinks when paused
     bool colon_lit = true;
-    if (!model.is_playing()) {
+    if (!is_rec && !model.is_playing()) {
         const double phase = std::fmod(model.uptime_seconds(), 1.0);
         colon_lit = (phase < 0.5);
     }
     const float colon_w = 16.0f;
     DrawColon(draw_list, ImVec2(cur_x, digits_start_y),
-              ImVec2(colon_w, seg_digit_h), colon_lit);
+              ImVec2(colon_w, seg_digit_h), colon_lit, 0.08f,
+              timer_lit_core, timer_lit_glow, timer_unlit_col);
     cur_x += colon_w + 6.0f;
 
     DrawSevenSegmentDigit(draw_list, ImVec2(cur_x, digits_start_y),
-                          ImVec2(seg_digit_w, seg_digit_h), sec_buf[0]);
+                          ImVec2(seg_digit_w, seg_digit_h), sec_buf[0], 0.08f,
+                          timer_lit_core, timer_lit_glow, timer_unlit_col);
     cur_x += seg_digit_w + seg_digit_gap;
     DrawSevenSegmentDigit(draw_list, ImVec2(cur_x, digits_start_y),
-                          ImVec2(seg_digit_w, seg_digit_h), sec_buf[1]);
+                          ImVec2(seg_digit_w, seg_digit_h), sec_buf[1], 0.08f,
+                          timer_lit_core, timer_lit_glow, timer_unlit_col);
 
     // Indicators Row Underneath
     // Indicators: "repeat (track/disk)", "shuffle", "cloud", "CDDB"
@@ -619,6 +643,7 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
 
     // Restore cursor position to right below the display widget
     ImGui::SetCursorScreenPos(ImVec2(screen_pos.x, display_end.y + 14.0f));
+    ImGui::Dummy(ImVec2(widget_width, 0.0f));
 }
 
 } // namespace mycds::gui
