@@ -317,7 +317,7 @@ void DrawRecordPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_re
     const bool is_bright = is_recording || pressed;
     const ImU32 red_core = is_bright ? IM_COL32(255, 65, 55, 255)
                                      : (hovered ? IM_COL32(245, 50, 40, 240) : IM_COL32(195, 30, 25, 220));
-    constexpr float radius = 8.5f;
+    constexpr float radius = 10.0f;
 
     // Subtle drop shadow
     draw_list->AddCircleFilled(ImVec2(center.x + 1.0f, center.y + 1.2f), radius, IM_COL32(10, 14, 20, 80));
@@ -810,9 +810,9 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
     draw_screw(ImVec2(panel_max.x - 10.0f, panel_max.y - 10.0f));
 
     // Layout geometry: 56x56 normal square buttons, 56x26 half-size buttons
-    constexpr float kNormalBtnSize = 56.0f;
-    constexpr float kHalfBtnWidth = 56.0f;
-    constexpr float kHalfBtnHeight = 26.0f;
+    constexpr float kNormalBtnSize = 60.0f;
+    constexpr float kHalfBtnWidth = 60.0f;
+    constexpr float kHalfBtnHeight = 28.0f;
     constexpr float kBtnGap = 7.0f;
     constexpr float kKnobRadius = 22.0f;
 
