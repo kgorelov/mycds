@@ -92,15 +92,35 @@ int main(int argc, char* argv[]) {
     }
 
     mycds::gui::CdDisplayModel display_model;
+    int target_fps = 60;
     for (int i = 1; i < argc; ++i) {
-        if (std::string_view(argv[i]) == "--stopped" || std::string_view(argv[i]) == "--paused") {
+        const std::string_view arg(argv[i]);
+        if (arg == "--stopped" || arg == "--paused") {
             display_model.stop();
+        } else if (arg == "--fps" && i + 1 < argc) {
+            target_fps = std::clamp(std::atoi(argv[++i]), 10, 240);
+        } else if (arg.starts_with("--fps=")) {
+            target_fps = std::clamp(std::atoi(argv[i] + 6), 10, 240);
         }
     }
+
+    const SDL_DisplayID display_id = SDL_GetDisplayForWindow(window);
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display_id);
+    const float display_hz = (mode && mode->refresh_rate > 0.0f) ? mode->refresh_rate : 60.0f;
+
+    int current_swap_interval = 0;
+    SDL_GL_GetSwapInterval(&current_swap_interval);
+    const bool vsync_active = (current_swap_interval > 0);
+
+    const Uint64 target_frame_duration_ns =
+        1'000'000'000ULL / static_cast<Uint64>(std::max(1, target_fps));
+    const bool requires_active_pacing =
+        !vsync_active || (static_cast<float>(target_fps) < (display_hz - 1.0f));
 
     bool running = true;
     int frames_to_render = 3;
     bool had_active_item_last_frame = false;
+    Uint64 last_frame_start_ns = SDL_GetTicksNS();
 
     while (running) {
         // Continuous updates are required if:
@@ -137,6 +157,14 @@ int main(int argc, char* argv[]) {
                 wait_timeout_ms = 10;
             } else if (wait_timeout_ms > 500) {
                 wait_timeout_ms = 500;
+            }
+        } else if (requires_active_pacing) {
+            // Active playback / interaction frame limiter (for high-refresh 120Hz/144Hz+ displays or custom --fps)
+            const Uint64 now_ns = SDL_GetTicksNS();
+            const Uint64 elapsed_ns = (now_ns > last_frame_start_ns) ? (now_ns - last_frame_start_ns) : 0;
+            if (elapsed_ns < target_frame_duration_ns) {
+                const Uint64 remaining_ns = target_frame_duration_ns - elapsed_ns;
+                wait_timeout_ms = static_cast<int>(remaining_ns / 1'000'000ULL);
             }
         }
 
@@ -178,6 +206,8 @@ int main(int argc, char* argv[]) {
         if (!running) {
             break;
         }
+
+        last_frame_start_ns = SDL_GetTicksNS();
 
         if (frames_to_render > 0) {
             --frames_to_render;

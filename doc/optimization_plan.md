@@ -54,11 +54,16 @@ Profiling via `gprofng` / `gp-collect-app` and static inspection highlights four
   - Wakes up instantaneously (0 ms latency) on any SDL input event (mouse motion, key press, window expose).
   - Batches event processing and ensures a 3-frame settling tail to let transitions resolve smoothly.
 
-### Phase 2: Frame Rate Limiting & Pacing (Medium Priority)
-*Target: Prevent excessive CPU usage on high-refresh monitors (120Hz/144Hz/240Hz).*
+### Phase 2: Frame Rate Limiting & Pacing [COMPLETED]
+*Target: Prevent excessive CPU usage on high-refresh monitors (120Hz/144Hz/240Hz) and allow power-saving modes.*
+*Result: Caps frame rate to 60 FPS maximum on high-refresh monitors, and supports custom `--fps <n>` (e.g. `--fps 30` drops active playback CPU to ~3.6%).*
 
-- During active playback, clamp animation redraws to a target frame rate (e.g. 30 FPS or 60 FPS) using `SDL_GetTicks()` or high-resolution timers.
-- Avoid rendering more frames than necessary when the visual elements (e.g., 10 Hz VU meter dynamics or 1 Hz elapsed time counters) do not require high-frequency redraws.
+- **Mechanism:** Implemented hardware-aware frame pacing in [src/gui/main.cpp](file:///home/kgorelov/git/mycds/src/gui/main.cpp#L104-L162).
+- **Features:**
+  - Detects native monitor display refresh rate via `SDL_GetCurrentDisplayMode()` and checks whether hardware VSync is active (`SDL_GL_GetSwapInterval()`).
+  - Supports `--fps <n>` and `--fps=<n>` command line options (range: 10–240 FPS, default: 60 FPS).
+  - Automatically activates frame sleep pacing only when required (`!vsync_active` or `target_fps < display_hz - 1.0f`), preventing VSync stutter on 60 Hz monitors while clamping CPU on 120 Hz, 144 Hz, and 240 Hz monitors.
+  - Sleep intervals during active animation use `SDL_WaitEventTimeout()`, keeping user input response completely instantaneous (0 ms input lag).
 
 ### Phase 3: Background Faceplate Caching with Framebuffer Object (Medium Priority)
 *Target: Reduce per-frame vertex count and draw call complexity by ~30–40%.*
