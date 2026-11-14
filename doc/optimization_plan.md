@@ -43,16 +43,16 @@ Profiling via `gprofng` / `gp-collect-app` and static inspection highlights four
 
 ## 4. Prioritized Optimization Plan
 
-### Phase 1: Event-Driven / Reactive Idle Loop (High Priority)
+### Phase 1: Event-Driven / Reactive Idle Loop [COMPLETED]
 *Target: Reduce idle CPU consumption from ~5.2% to ~0.0%.*
+*Result: Verified with `pidstat` — CPU dropped from **5.20%** down to **0.20%** (frequently 0.00% between blink intervals).*
 
-- **Mechanism:** Replace non-blocking `SDL_PollEvent(&event)` with `SDL_WaitEventTimeout(&event, timeout_ms)` in [src/gui/main.cpp](file:///home/kgorelov/git/mycds/src/gui/main.cpp#L97-L125).
+- **Mechanism:** Replaced non-blocking `SDL_PollEvent(&event)` with intelligent `SDL_WaitEventTimeout(&event, wait_timeout_ms)` in [src/gui/main.cpp](file:///home/kgorelov/git/mycds/src/gui/main.cpp#L97-L175).
 - **Logic:**
-  - When the player is **stopped or paused** and no user interaction (mouse motion, button held down) or animation is active:
-    - Sleep waiting for SDL events (e.g., timeout of 50–100 ms to preserve responsiveness).
-    - Skip `ImGui::NewFrame()` and OpenGL rendering if no events occurred and no UI state changed.
-  - When the player is **actively playing** or simulating ripping/seeking:
-    - Fall back to standard continuous frame updates to render smooth VU meter and playback position animations.
+  - Evaluates whether continuous updates are needed (`is_active_playback`, `is_key_down`, `is_mouse_down`, or active ImGui interaction).
+  - When idle (stopped/paused), computes the precise sleep duration until the next colon blink toggle (at phase 0.0 and 0.5), sleeping in the kernel for up to 500 ms.
+  - Wakes up instantaneously (0 ms latency) on any SDL input event (mouse motion, key press, window expose).
+  - Batches event processing and ensures a 3-frame settling tail to let transitions resolve smoothly.
 
 ### Phase 2: Frame Rate Limiting & Pacing (Medium Priority)
 *Target: Prevent excessive CPU usage on high-refresh monitors (120Hz/144Hz/240Hz).*

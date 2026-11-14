@@ -1,4 +1,7 @@
+#include <algorithm>
+#include <cmath>
 #include <iostream>
+#include <string_view>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -14,8 +17,6 @@
 #include "imgui_impl_sdl3.h"
 
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::cerr << "Failed to initialize SDL: " << SDL_GetError() << '\n';
@@ -91,31 +92,99 @@ int main(int argc, char* argv[]) {
     }
 
     mycds::gui::CdDisplayModel display_model;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string_view(argv[i]) == "--stopped" || std::string_view(argv[i]) == "--paused") {
+            display_model.stop();
+        }
+    }
 
     bool running = true;
-    while (running) {
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL3_ProcessEvent(&event);
+    int frames_to_render = 3;
+    bool had_active_item_last_frame = false;
 
-            if (event.type == SDL_EVENT_QUIT) {
-                running = false;
-            }
-            if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
-                event.window.windowID == SDL_GetWindowID(window)) {
-                running = false;
-            }
-            if (event.type == SDL_EVENT_KEY_DOWN) {
-                if (event.key.key == SDLK_Q || event.key.key == 'Q' ||
-                    event.key.scancode == SDL_SCANCODE_Q ||
-                    event.key.key == SDLK_F10 || event.key.scancode == SDL_SCANCODE_F10) {
-                    running = false;
+    while (running) {
+        // Continuous updates are required if:
+        // 1. Audio playback is running or ripping simulation is active
+        // 2. A mouse button or keyboard key is being held down
+        // 3. A Dear ImGui item is active (dragging a knob, text editing, etc.)
+        bool is_key_down = false;
+        int num_keys = 0;
+        const bool* key_state = SDL_GetKeyboardState(&num_keys);
+        if (key_state) {
+            for (int i = 0; i < num_keys; ++i) {
+                if (key_state[i]) {
+                    is_key_down = true;
+                    break;
                 }
             }
         }
+        const bool is_mouse_down = (SDL_GetMouseState(nullptr, nullptr) != 0);
+        const bool is_active_playback = display_model.is_playing() || display_model.is_recording();
+        const bool needs_continuous_update =
+            is_active_playback ||
+            is_key_down ||
+            is_mouse_down ||
+            had_active_item_last_frame;
+
+        int wait_timeout_ms = 0;
+        if (!needs_continuous_update && frames_to_render <= 0) {
+            // When stopped or paused, calculate time until the next colon blink toggle (phase 0.0 and 0.5)
+            const double uptime = display_model.uptime_seconds();
+            const double phase = std::fmod(uptime, 1.0);
+            const double time_to_next_blink = (phase < 0.5) ? (0.5 - phase) : (1.0 - phase);
+            wait_timeout_ms = static_cast<int>(std::ceil(time_to_next_blink * 1000.0)) + 10;
+            if (wait_timeout_ms < 10) {
+                wait_timeout_ms = 10;
+            } else if (wait_timeout_ms > 500) {
+                wait_timeout_ms = 500;
+            }
+        }
+
+        auto process_event = [&](const SDL_Event& ev) {
+            ImGui_ImplSDL3_ProcessEvent(&ev);
+
+            if (ev.type == SDL_EVENT_QUIT) {
+                running = false;
+            }
+            if (ev.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+                ev.window.windowID == SDL_GetWindowID(window)) {
+                running = false;
+            }
+            if (ev.type == SDL_EVENT_KEY_DOWN) {
+                if (ev.key.key == SDLK_Q || ev.key.key == 'Q' ||
+                    ev.key.scancode == SDL_SCANCODE_Q ||
+                    ev.key.key == SDLK_F10 || ev.key.scancode == SDL_SCANCODE_F10) {
+                    running = false;
+                }
+            }
+        };
+
+        SDL_Event event;
+        bool has_event = false;
+        if (wait_timeout_ms > 0) {
+            has_event = SDL_WaitEventTimeout(&event, wait_timeout_ms);
+        } else {
+            has_event = SDL_PollEvent(&event);
+        }
+
+        if (has_event) {
+            frames_to_render = 3;
+            process_event(event);
+            while (SDL_PollEvent(&event)) {
+                process_event(event);
+            }
+        }
+
+        if (!running) {
+            break;
+        }
+
+        if (frames_to_render > 0) {
+            --frames_to_render;
+        }
 
         if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) {
-            SDL_Delay(10);
+            SDL_Delay(50);
             continue;
         }
 
@@ -137,17 +206,18 @@ int main(int argc, char* argv[]) {
         if (ImGui::IsKeyPressed(ImGuiKey_E)) {
             display_model.open_eject_dialog();
         }
+        const double seek_dt = std::min(static_cast<double>(io.DeltaTime), 0.05);
         if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
-            display_model.seek_backward(10.0 * static_cast<double>(io.DeltaTime));
+            display_model.seek_backward(10.0 * seek_dt);
         }
         if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
-            display_model.seek_forward(10.0 * static_cast<double>(io.DeltaTime));
+            display_model.seek_forward(10.0 * seek_dt);
         }
         if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) {
-            display_model.set_volume(display_model.volume() + 0.35 * static_cast<double>(io.DeltaTime));
+            display_model.set_volume(display_model.volume() + 0.35 * seek_dt);
         }
         if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) {
-            display_model.set_volume(display_model.volume() - 0.35 * static_cast<double>(io.DeltaTime));
+            display_model.set_volume(display_model.volume() - 0.35 * seek_dt);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_S)) {
             display_model.toggle_shuffle();
@@ -268,6 +338,8 @@ int main(int argc, char* argv[]) {
         ImGui::End();
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
+
+        had_active_item_last_frame = ImGui::IsAnyItemActive();
 
         // Rendering
         ImGui::Render();
