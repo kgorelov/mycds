@@ -92,125 +92,93 @@ int main(int argc, char* argv[]) {
     }
 
     mycds::gui::CdDisplayModel display_model;
-    int target_fps = 60;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
         if (arg == "--stopped" || arg == "--paused") {
             display_model.stop();
-        } else if (arg == "--fps" && i + 1 < argc) {
-            target_fps = std::clamp(std::atoi(argv[++i]), 10, 240);
-        } else if (arg.starts_with("--fps=")) {
-            target_fps = std::clamp(std::atoi(argv[i] + 6), 10, 240);
         }
     }
 
-    const SDL_DisplayID display_id = SDL_GetDisplayForWindow(window);
-    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display_id);
-    const float display_hz = (mode && mode->refresh_rate > 0.0f) ? mode->refresh_rate : 60.0f;
-
-    int current_swap_interval = 0;
-    SDL_GL_GetSwapInterval(&current_swap_interval);
-    const bool vsync_active = (current_swap_interval > 0);
-
-    const Uint64 target_frame_duration_ns =
-        1'000'000'000ULL / static_cast<Uint64>(std::max(1, target_fps));
-    const bool requires_active_pacing =
-        !vsync_active || (static_cast<float>(target_fps) < (display_hz - 1.0f));
-
     bool running = true;
-    int frames_to_render = 3;
-    bool had_active_item_last_frame = false;
-    Uint64 last_frame_start_ns = SDL_GetTicksNS();
+    int current_swap_interval = 1;
+    SDL_GL_SetSwapInterval(1);
 
-    while (running) {
-        // Continuous updates are required if:
-        // 1. Audio playback is running or ripping simulation is active
-        // 2. A mouse button or keyboard key is being held down
-        // 3. A Dear ImGui item is active (dragging a knob, text editing, etc.)
-        bool is_key_down = false;
-        int num_keys = 0;
-        const bool* key_state = SDL_GetKeyboardState(&num_keys);
-        if (key_state) {
-            for (int i = 0; i < num_keys; ++i) {
-                if (key_state[i]) {
-                    is_key_down = true;
-                    break;
-                }
+    bool had_active_item_last_frame = false;
+    Uint64 last_user_activity_ticks = SDL_GetTicks();
+    constexpr Uint64 kInteractiveGracePeriodMs = 250;
+
+    auto process_event = [&](const SDL_Event& ev) {
+        ImGui_ImplSDL3_ProcessEvent(&ev);
+
+        if (ev.type == SDL_EVENT_QUIT) {
+            running = false;
+        }
+        if (ev.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+            ev.window.windowID == SDL_GetWindowID(window)) {
+            running = false;
+        }
+        if (ev.type == SDL_EVENT_KEY_DOWN) {
+            if (ev.key.key == SDLK_Q || ev.key.key == 'Q' ||
+                ev.key.scancode == SDL_SCANCODE_Q ||
+                ev.key.key == SDLK_F10 || ev.key.scancode == SDL_SCANCODE_F10) {
+                running = false;
             }
         }
-        const bool is_mouse_down = (SDL_GetMouseState(nullptr, nullptr) != 0);
-        const bool is_active_playback = display_model.is_playing() || display_model.is_recording();
-        const bool needs_continuous_update =
-            is_active_playback ||
-            is_key_down ||
-            is_mouse_down ||
-            had_active_item_last_frame;
+    };
 
-        int wait_timeout_ms = 0;
-        if (!needs_continuous_update && frames_to_render <= 0) {
-            // When stopped or paused, calculate time until the next colon blink toggle (phase 0.0 and 0.5)
+    while (running) {
+        const Uint64 now_ticks = SDL_GetTicks();
+        const bool user_recently_active = (now_ticks - last_user_activity_ticks < kInteractiveGracePeriodMs);
+        const bool is_active_playback = display_model.is_playing() || display_model.is_recording();
+
+        SDL_Event event;
+        bool had_events = false;
+
+        // When in idle mode (stopped/paused) and user is not actively interacting:
+        // Sleep in kernel waiting for events or the next colon blink toggle (phase 0.0 and 0.5)
+        if (!user_recently_active && !is_active_playback) {
             const double uptime = display_model.uptime_seconds();
             const double phase = std::fmod(uptime, 1.0);
             const double time_to_next_blink = (phase < 0.5) ? (0.5 - phase) : (1.0 - phase);
-            wait_timeout_ms = static_cast<int>(std::ceil(time_to_next_blink * 1000.0)) + 10;
-            if (wait_timeout_ms < 10) {
-                wait_timeout_ms = 10;
-            } else if (wait_timeout_ms > 500) {
-                wait_timeout_ms = 500;
-            }
-        } else if (requires_active_pacing) {
-            // Active playback / interaction frame limiter (for high-refresh 120Hz/144Hz+ displays or custom --fps)
-            const Uint64 now_ns = SDL_GetTicksNS();
-            const Uint64 elapsed_ns = (now_ns > last_frame_start_ns) ? (now_ns - last_frame_start_ns) : 0;
-            if (elapsed_ns < target_frame_duration_ns) {
-                const Uint64 remaining_ns = target_frame_duration_ns - elapsed_ns;
-                wait_timeout_ms = static_cast<int>(remaining_ns / 1'000'000ULL);
-            }
-        }
+            int wait_ms = static_cast<int>(std::ceil(time_to_next_blink * 1000.0)) + 10;
+            wait_ms = std::clamp(wait_ms, 10, 500);
 
-        auto process_event = [&](const SDL_Event& ev) {
-            ImGui_ImplSDL3_ProcessEvent(&ev);
-
-            if (ev.type == SDL_EVENT_QUIT) {
-                running = false;
-            }
-            if (ev.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
-                ev.window.windowID == SDL_GetWindowID(window)) {
-                running = false;
-            }
-            if (ev.type == SDL_EVENT_KEY_DOWN) {
-                if (ev.key.key == SDLK_Q || ev.key.key == 'Q' ||
-                    ev.key.scancode == SDL_SCANCODE_Q ||
-                    ev.key.key == SDLK_F10 || ev.key.scancode == SDL_SCANCODE_F10) {
-                    running = false;
-                }
-            }
-        };
-
-        SDL_Event event;
-        bool has_event = false;
-        if (wait_timeout_ms > 0) {
-            has_event = SDL_WaitEventTimeout(&event, wait_timeout_ms);
-        } else {
-            has_event = SDL_PollEvent(&event);
-        }
-
-        if (has_event) {
-            frames_to_render = 3;
-            process_event(event);
-            while (SDL_PollEvent(&event)) {
+            if (SDL_WaitEventTimeout(&event, wait_ms)) {
+                had_events = true;
                 process_event(event);
             }
+        }
+
+        // Drain ALL pending events immediately (highest priority user input processing)
+        while (SDL_PollEvent(&event)) {
+            had_events = true;
+            process_event(event);
+        }
+
+        if (had_events) {
+            last_user_activity_ticks = SDL_GetTicks();
         }
 
         if (!running) {
             break;
         }
 
-        last_frame_start_ns = SDL_GetTicksNS();
+        if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) {
+            SDL_Delay(50);
+            continue;
+        }
 
-        if (frames_to_render > 0) {
-            --frames_to_render;
+        // Dynamic VSync swap pacing:
+        // - Interactive mode: interval 1 (full monitor refresh, e.g. 60 FPS) for instant, lag-free UI.
+        // - Hands-off playback mode: interval 2 (e.g. 30 FPS) for smooth retro LED meters at low CPU.
+        const bool is_interactive = had_events ||
+                                    (SDL_GetTicks() - last_user_activity_ticks < kInteractiveGracePeriodMs) ||
+                                    had_active_item_last_frame;
+
+        const int desired_interval = is_interactive ? 1 : (is_active_playback ? 2 : 1);
+        if (desired_interval != current_swap_interval) {
+            SDL_GL_SetSwapInterval(desired_interval);
+            current_swap_interval = desired_interval;
         }
 
         if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) {
