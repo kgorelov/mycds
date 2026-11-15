@@ -455,9 +455,14 @@ bool CdDisplayModel::is_eject_dialog_open() const {
 }
 
 void CdDisplayModel::load_disc(const std::string& album_title, const std::vector<TrackInfo>& tracks) {
+    load_disc(artist_name_, album_title, tracks);
+}
+
+void CdDisplayModel::load_disc(const std::string& artist_name, const std::string& album_title, const std::vector<TrackInfo>& tracks) {
     if (tracks.empty()) {
         return;
     }
+    artist_name_ = artist_name;
     album_title_ = album_title;
     tracks_ = tracks;
     recording_ = false;
@@ -467,8 +472,29 @@ void CdDisplayModel::load_disc(const std::string& album_title, const std::vector
     eject_dialog_open_ = false;
 }
 
+const std::string& CdDisplayModel::artist_name() const {
+    return artist_name_;
+}
+
 const std::string& CdDisplayModel::album_title() const {
     return album_title_;
+}
+
+void CdDisplayModel::set_artist_name(const std::string& artist) {
+    artist_name_ = artist;
+}
+
+void CdDisplayModel::set_album_title(const std::string& title) {
+    album_title_ = title;
+}
+
+bool CdDisplayModel::has_cddb_data() const {
+    const bool is_connected = (connectivity_ == ConnectivityStatus::Connected);
+    return has_cddb_data_ && is_cddb_active() && is_connected && !artist_name_.empty() && !album_title_.empty();
+}
+
+void CdDisplayModel::set_has_cddb_data(bool has_data) {
+    has_cddb_data_ = has_data;
 }
 
 } // namespace mycds::gui

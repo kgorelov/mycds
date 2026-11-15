@@ -391,3 +391,46 @@ TEST(CdDisplayModelTests, RecordEmulationStopInterrupt) {
     EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
     EXPECT_FALSE(model.is_playing());
 }
+
+TEST(CdDisplayModelTests, ArtistAndAlbumCddbData) {
+    CdDisplayModel model;
+
+    EXPECT_EQ(model.artist_name(), "Pink Floyd");
+    EXPECT_EQ(model.album_title(), "The Dark Side of the Moon");
+
+    // Before 3.0s uptime, CDDB data is inactive
+    EXPECT_FALSE(model.has_cddb_data());
+
+    // After 3.0s uptime with connectivity, CDDB data becomes active
+    model.update(3.0);
+    EXPECT_TRUE(model.has_cddb_data());
+
+    // Disconnecting connectivity disables CDDB data
+    model.set_connectivity(ConnectivityStatus::Disconnected);
+    EXPECT_FALSE(model.has_cddb_data());
+
+    model.set_connectivity(ConnectivityStatus::Connected);
+    EXPECT_TRUE(model.has_cddb_data());
+
+    // Setting explicit has_cddb_data flag
+    model.set_has_cddb_data(false);
+    EXPECT_FALSE(model.has_cddb_data());
+    model.set_has_cddb_data(true);
+    EXPECT_TRUE(model.has_cddb_data());
+
+    // Mutating artist and album title
+    model.set_artist_name("Dire Straits");
+    model.set_album_title("Brothers in Arms");
+    EXPECT_EQ(model.artist_name(), "Dire Straits");
+    EXPECT_EQ(model.album_title(), "Brothers in Arms");
+
+    // Loading new disc with artist and tracks
+    std::vector<TrackInfo> new_tracks = {
+        {1, 312, "So Far Away"},
+        {2, 514, "Money for Nothing"}
+    };
+    model.load_disc("Dire Straits", "Brothers in Arms", new_tracks);
+    EXPECT_EQ(model.artist_name(), "Dire Straits");
+    EXPECT_EQ(model.album_title(), "Brothers in Arms");
+    EXPECT_EQ(model.total_tracks(), 2);
+}

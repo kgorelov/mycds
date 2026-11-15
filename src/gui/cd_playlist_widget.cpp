@@ -77,11 +77,6 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     // Header Row
     const float text_line_h = ImGui::GetTextLineHeight();
     const float header_y = glass_min.y + 10.0f;
-    draw_list->AddText(ImVec2(glass_min.x + 16.0f, header_y),
-                       IM_COL32(160, 110, 50, 180), "COMPACT DISC DIGITAL AUDIO");
-
-    draw_list->AddText(ImVec2(glass_min.x + 250.0f, header_y),
-                       kAmberLitCore, "TRACK PLAYLIST");
 
     // Total tracks and duration summary
     int total_duration = 0;
@@ -94,8 +89,34 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     std::snprintf(disc_info_buf, sizeof(disc_info_buf), "%d TRACKS  [%02d:%02d]",
                   model.total_tracks(), total_min, total_sec);
     const float info_w = ImGui::CalcTextSize(disc_info_buf).x;
-    draw_list->AddText(ImVec2(glass_max.x - info_w - 16.0f, header_y),
+    const float summary_x = glass_max.x - info_w - 16.0f;
+    draw_list->AddText(ImVec2(summary_x, header_y),
                        kAmberMuted, disc_info_buf);
+
+    if (model.has_cddb_data()) {
+        const std::string& artist = model.artist_name();
+        const std::string& album = model.album_title();
+
+        const float artist_x = glass_min.x + 16.0f;
+        draw_list->AddText(ImVec2(artist_x, header_y), kAmberLitCore, artist.c_str());
+
+        const float artist_w = ImGui::CalcTextSize(artist.c_str()).x;
+        // Position album name in the space previously occupied by "TRACK PLAYLIST"
+        const float album_x = std::max(glass_min.x + 250.0f, artist_x + artist_w + 20.0f);
+        const float max_album_w = summary_x - album_x - 12.0f;
+        if (max_album_w > 0.0f) {
+            draw_list->PushClipRect(ImVec2(album_x, header_y),
+                                    ImVec2(summary_x - 12.0f, header_y + text_line_h), true);
+            draw_list->AddText(ImVec2(album_x, header_y), kAmberLitCore, album.c_str());
+            draw_list->PopClipRect();
+        }
+    } else {
+        draw_list->AddText(ImVec2(glass_min.x + 16.0f, header_y),
+                           IM_COL32(160, 110, 50, 180), "COMPACT DISC DIGITAL AUDIO");
+
+        draw_list->AddText(ImVec2(glass_min.x + 250.0f, header_y),
+                           kAmberLitCore, "TRACK PLAYLIST");
+    }
 
     // Column Headers
     const float col_header_y = header_y + text_line_h + 8.0f;

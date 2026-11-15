@@ -67,7 +67,13 @@ public:
     [[nodiscard]] bool is_eject_dialog_open() const;
 
     void load_disc(const std::string& album_title, const std::vector<TrackInfo>& tracks);
+    void load_disc(const std::string& artist_name, const std::string& album_title, const std::vector<TrackInfo>& tracks);
+    [[nodiscard]] const std::string& artist_name() const;
     [[nodiscard]] const std::string& album_title() const;
+    void set_artist_name(const std::string& artist);
+    void set_album_title(const std::string& title);
+    [[nodiscard]] bool has_cddb_data() const;
+    void set_has_cddb_data(bool has_data);
 
     void set_connectivity(ConnectivityStatus status);
     void toggle_connectivity();
@@ -99,7 +105,9 @@ public:
     void reset_volume_levels();
 
 private:
+    std::string artist_name_{"Pink Floyd"};
     std::string album_title_{"The Dark Side of the Moon"};
+    bool has_cddb_data_{true};
     std::vector<TrackInfo> tracks_;
     size_t current_track_index_{0};
     double track_elapsed_seconds_{0.0};
