@@ -171,15 +171,32 @@ bool RenderHardwareTextButton(const char* str_id, const char* label,
 
     const ImU32 text_col = !enabled
         ? IM_COL32(90, 96, 106, 160)
-        : ((is_active || pressed) ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted));
+        : ((is_active || pressed)
+            ? kColCyanGlowCore
+            : (hovered ? kColCyanBright : IM_COL32(110, 210, 235, 235)));
 
-    const ImVec2 text_size = ImGui::CalcTextSize(label);
+    ImFont* font = ImGui::GetFont();
+    constexpr float kBtnFontSize = 18.0f;
+    const ImVec2 text_size = font->CalcTextSizeA(kBtnFontSize, 10000.0f, 0.0f, label);
     const ImVec2 text_pos(
         b_min.x + (size.x - text_size.x) * 0.5f,
         b_min.y + (size.y - text_size.y) * 0.5f
     );
-    draw_list->AddText(ImVec2(text_pos.x + 1.0f, text_pos.y + 1.0f), IM_COL32(10, 14, 20, 120), label);
-    draw_list->AddText(text_pos, text_col, label);
+
+    // Subtle recessed drop shadow
+    draw_list->AddText(font, kBtnFontSize, ImVec2(text_pos.x + 1.0f, text_pos.y + 1.2f),
+                       IM_COL32(8, 10, 14, 180), label);
+
+    // Soft cyan backlight bloom for active/hovered states
+    if (enabled && (is_active || hovered || pressed)) {
+        const ImU32 bloom_col = is_active ? IM_COL32(0, 230, 255, 70) : IM_COL32(0, 220, 255, 40);
+        draw_list->AddText(font, kBtnFontSize, ImVec2(text_pos.x - 0.6f, text_pos.y), bloom_col, label);
+        draw_list->AddText(font, kBtnFontSize, ImVec2(text_pos.x + 1.2f, text_pos.y), bloom_col, label);
+    }
+
+    // Bold stroke: double-pass with slight horizontal offset
+    draw_list->AddText(font, kBtnFontSize, text_pos, text_col, label);
+    draw_list->AddText(font, kBtnFontSize, ImVec2(text_pos.x + 0.65f, text_pos.y), text_col, label);
 
     return enabled && ImGui::IsItemClicked(ImGuiMouseButton_Left);
 }
