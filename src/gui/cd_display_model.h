@@ -17,6 +17,14 @@ enum class ConnectivityStatus {
     Disconnected
 };
 
+enum class EjectMenuScreen {
+    Cd,
+    ImageFile,
+    Library,
+    DiskInfo,
+    Settings
+};
+
 struct TrackInfo {
     int number{1};
     int duration_seconds{222};
@@ -62,9 +70,12 @@ public:
     void set_balance(double bal);
     [[nodiscard]] double balance() const;
 
-    void open_eject_dialog();
-    void close_eject_dialog();
-    [[nodiscard]] bool is_eject_dialog_open() const;
+    void open_eject_menu();
+    void close_eject_menu();
+    [[nodiscard]] bool is_eject_menu_open() const;
+
+    void set_active_eject_screen(EjectMenuScreen screen);
+    [[nodiscard]] EjectMenuScreen active_eject_screen() const;
 
     void load_disc(const std::string& album_title, const std::vector<TrackInfo>& tracks);
     void load_disc(const std::string& artist_name, const std::string& album_title, const std::vector<TrackInfo>& tracks);
@@ -120,7 +131,8 @@ private:
     ConnectivityStatus connectivity_{ConnectivityStatus::Connected};
     double volume_{0.8};
     double balance_{0.0};
-    bool eject_dialog_open_{false};
+    bool eject_menu_open_{false};
+    EjectMenuScreen active_eject_screen_{EjectMenuScreen::Cd};
     VolumeLevels volume_levels_{};
     double left_peak_timer_{0.0};
     double right_peak_timer_{0.0};

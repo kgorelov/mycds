@@ -454,16 +454,24 @@ double CdDisplayModel::balance() const {
     return balance_;
 }
 
-void CdDisplayModel::open_eject_dialog() {
-    eject_dialog_open_ = true;
+void CdDisplayModel::open_eject_menu() {
+    eject_menu_open_ = true;
 }
 
-void CdDisplayModel::close_eject_dialog() {
-    eject_dialog_open_ = false;
+void CdDisplayModel::close_eject_menu() {
+    eject_menu_open_ = false;
 }
 
-bool CdDisplayModel::is_eject_dialog_open() const {
-    return eject_dialog_open_;
+bool CdDisplayModel::is_eject_menu_open() const {
+    return eject_menu_open_;
+}
+
+void CdDisplayModel::set_active_eject_screen(EjectMenuScreen screen) {
+    active_eject_screen_ = screen;
+}
+
+EjectMenuScreen CdDisplayModel::active_eject_screen() const {
+    return active_eject_screen_;
 }
 
 void CdDisplayModel::load_disc(const std::string& album_title, const std::vector<TrackInfo>& tracks) {
@@ -481,7 +489,7 @@ void CdDisplayModel::load_disc(const std::string& artist_name, const std::string
     current_track_index_ = 0;
     track_elapsed_seconds_ = 0.0;
     playing_ = true;
-    eject_dialog_open_ = false;
+    eject_menu_open_ = false;
 }
 
 const std::string& CdDisplayModel::artist_name() const {

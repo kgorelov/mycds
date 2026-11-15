@@ -303,14 +303,26 @@ TEST(CdDisplayModelTests, VolumeAndBalanceAdjustment) {
     EXPECT_DOUBLE_EQ(model.balance(), -1.0);
 }
 
-TEST(CdDisplayModelTests, EjectDialogAndLoadDisc) {
+TEST(CdDisplayModelTests, EjectMenuAndLoadDisc) {
     CdDisplayModel model;
 
-    EXPECT_FALSE(model.is_eject_dialog_open());
-    model.open_eject_dialog();
-    EXPECT_TRUE(model.is_eject_dialog_open());
-    model.close_eject_dialog();
-    EXPECT_FALSE(model.is_eject_dialog_open());
+    EXPECT_FALSE(model.is_eject_menu_open());
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Cd);
+
+    model.open_eject_menu();
+    EXPECT_TRUE(model.is_eject_menu_open());
+
+    model.set_active_eject_screen(EjectMenuScreen::ImageFile);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::ImageFile);
+    model.set_active_eject_screen(EjectMenuScreen::Library);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Library);
+    model.set_active_eject_screen(EjectMenuScreen::DiskInfo);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::DiskInfo);
+    model.set_active_eject_screen(EjectMenuScreen::Settings);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Settings);
+
+    model.close_eject_menu();
+    EXPECT_FALSE(model.is_eject_menu_open());
 
     const std::vector<TrackInfo> new_tracks = {
         {1, 180, "Come Together"},
@@ -318,6 +330,7 @@ TEST(CdDisplayModelTests, EjectDialogAndLoadDisc) {
         {3, 210, "Maxwell's Silver Hammer"}
     };
 
+    model.open_eject_menu();
     model.load_disc("Abbey Road", new_tracks);
     EXPECT_EQ(model.album_title(), "Abbey Road");
     EXPECT_EQ(model.total_tracks(), 3);
@@ -325,7 +338,7 @@ TEST(CdDisplayModelTests, EjectDialogAndLoadDisc) {
     EXPECT_EQ(model.tracks()[0].title, "Come Together");
     EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
     EXPECT_TRUE(model.is_playing());
-    EXPECT_FALSE(model.is_eject_dialog_open());
+    EXPECT_FALSE(model.is_eject_menu_open());
 }
 
 TEST(CdDisplayModelTests, RecordEmulationLifecycle) {

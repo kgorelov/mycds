@@ -10,6 +10,7 @@
 #include "cd_controls_widget.h"
 #include "cd_display_model.h"
 #include "cd_display_widget.h"
+#include "cd_eject_menu_widget.h"
 #include "cd_playlist_widget.h"
 #include "cd_volume_meter_widget.h"
 #include "imgui.h"
@@ -199,80 +200,86 @@ int main(int argc, char* argv[]) {
         ImGui::NewFrame();
 
         // Keyboard controls
-        if (ImGui::IsKeyPressed(ImGuiKey_Q) || ImGui::IsKeyPressed(ImGuiKey_F10)) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F10) || (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Q))) {
             running = false;
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
-            display_model.toggle_play_pause();
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_X)) {
-            display_model.stop();
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_E)) {
-            display_model.open_eject_dialog();
-        }
-        const double seek_dt = std::min(static_cast<double>(io.DeltaTime), 0.05);
-        if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
-            display_model.seek_backward(10.0 * seek_dt);
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
-            display_model.seek_forward(10.0 * seek_dt);
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) {
-            display_model.set_volume(display_model.volume() + 0.35 * seek_dt);
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) {
-            display_model.set_volume(display_model.volume() - 0.35 * seek_dt);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_S)) {
-            display_model.toggle_shuffle();
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_R)) {
-            display_model.toggle_repeat();
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_N) || ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
-            display_model.next_track();
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_P) || ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
-            display_model.prev_track();
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_C)) {
-            display_model.toggle_connectivity();
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_D)) {
-            display_model.start_recording();
-        }
+        if (display_model.is_eject_menu_open()) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                display_model.close_eject_menu();
+            }
+        } else if (!io.WantTextInput) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
+                display_model.toggle_play_pause();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_X)) {
+                display_model.stop();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_E)) {
+                display_model.open_eject_menu();
+            }
+            const double seek_dt = std::min(static_cast<double>(io.DeltaTime), 0.05);
+            if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
+                display_model.seek_backward(10.0 * seek_dt);
+            }
+            if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
+                display_model.seek_forward(10.0 * seek_dt);
+            }
+            if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) {
+                display_model.set_volume(display_model.volume() + 0.35 * seek_dt);
+            }
+            if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) {
+                display_model.set_volume(display_model.volume() - 0.35 * seek_dt);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_S)) {
+                display_model.toggle_shuffle();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_R)) {
+                display_model.toggle_repeat();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_N) || ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
+                display_model.next_track();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_P) || ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
+                display_model.prev_track();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_C)) {
+                display_model.toggle_connectivity();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_D)) {
+                display_model.start_recording();
+            }
 
-        // Direct track selection (1-9 for tracks 1-9, 0 for track 10)
-        if (ImGui::IsKeyPressed(ImGuiKey_1) || ImGui::IsKeyPressed(ImGuiKey_Keypad1)) {
-            display_model.jump_to_track(1);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_2) || ImGui::IsKeyPressed(ImGuiKey_Keypad2)) {
-            display_model.jump_to_track(2);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_3) || ImGui::IsKeyPressed(ImGuiKey_Keypad3)) {
-            display_model.jump_to_track(3);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_4) || ImGui::IsKeyPressed(ImGuiKey_Keypad4)) {
-            display_model.jump_to_track(4);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_5) || ImGui::IsKeyPressed(ImGuiKey_Keypad5)) {
-            display_model.jump_to_track(5);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_6) || ImGui::IsKeyPressed(ImGuiKey_Keypad6)) {
-            display_model.jump_to_track(6);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_7) || ImGui::IsKeyPressed(ImGuiKey_Keypad7)) {
-            display_model.jump_to_track(7);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_8) || ImGui::IsKeyPressed(ImGuiKey_Keypad8)) {
-            display_model.jump_to_track(8);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_9) || ImGui::IsKeyPressed(ImGuiKey_Keypad9)) {
-            display_model.jump_to_track(9);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_0) || ImGui::IsKeyPressed(ImGuiKey_Keypad0)) {
-            display_model.jump_to_track(10);
+            // Direct track selection (1-9 for tracks 1-9, 0 for track 10)
+            if (ImGui::IsKeyPressed(ImGuiKey_1) || ImGui::IsKeyPressed(ImGuiKey_Keypad1)) {
+                display_model.jump_to_track(1);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_2) || ImGui::IsKeyPressed(ImGuiKey_Keypad2)) {
+                display_model.jump_to_track(2);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_3) || ImGui::IsKeyPressed(ImGuiKey_Keypad3)) {
+                display_model.jump_to_track(3);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_4) || ImGui::IsKeyPressed(ImGuiKey_Keypad4)) {
+                display_model.jump_to_track(4);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_5) || ImGui::IsKeyPressed(ImGuiKey_Keypad5)) {
+                display_model.jump_to_track(5);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_6) || ImGui::IsKeyPressed(ImGuiKey_Keypad6)) {
+                display_model.jump_to_track(6);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_7) || ImGui::IsKeyPressed(ImGuiKey_Keypad7)) {
+                display_model.jump_to_track(7);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_8) || ImGui::IsKeyPressed(ImGuiKey_Keypad8)) {
+                display_model.jump_to_track(8);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_9) || ImGui::IsKeyPressed(ImGuiKey_Keypad9)) {
+                display_model.jump_to_track(9);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_0) || ImGui::IsKeyPressed(ImGuiKey_Keypad0)) {
+                display_model.jump_to_track(10);
+            }
         }
 
         // Update simulation time
@@ -303,42 +310,46 @@ int main(int argc, char* argv[]) {
             viewport->WorkSize
         );
 
-        constexpr float widget_w = 680.0f;
-        constexpr float widget_h = 250.0f;
-        constexpr float playlist_w = 680.0f;
-        constexpr float playlist_h = 480.0f;
+        if (display_model.is_eject_menu_open()) {
+            mycds::gui::RenderEjectMenu(display_model, ImGui::GetContentRegionAvail());
+        } else {
+            constexpr float widget_w = 680.0f;
+            constexpr float widget_h = 250.0f;
+            constexpr float playlist_w = 680.0f;
+            constexpr float playlist_h = 480.0f;
 
-        const float avail_w = ImGui::GetContentRegionAvail().x;
-        const float total_panels_w = widget_w + 24.0f + playlist_w;
-        const float indent_x = (avail_w > total_panels_w) ? ((avail_w - total_panels_w) * 0.5f) : 0.0f;
+            const float avail_w = ImGui::GetContentRegionAvail().x;
+            const float total_panels_w = widget_w + 24.0f + playlist_w;
+            const float indent_x = (avail_w > total_panels_w) ? ((avail_w - total_panels_w) * 0.5f) : 0.0f;
 
-        if (indent_x > 0.0f) {
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent_x);
+            if (indent_x > 0.0f) {
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent_x);
+            }
+
+            // Left Column: Main CD Player Display + Future Widgets Space + Transport Controls
+            ImGui::BeginGroup();
+            {
+                // Phase 2.1: CD Player Display Widget
+                mycds::gui::RenderCdDisplay(display_model, ImVec2(widget_w, widget_h));
+
+                // Phase 2.3: LED volume indicator
+                mycds::gui::RenderCdVolumeMeter(display_model, ImVec2(widget_w, 90.0f));
+
+                // Phase 2.4: Controls Widget (Hardware buttons, backlit cyan pictograms, rotary knobs)
+                mycds::gui::RenderCdControls(display_model, ImVec2(widget_w, 116.0f));
+            }
+            ImGui::EndGroup();
+
+            ImGui::SameLine(0.0f, 24.0f);
+
+            // Right Column: Phase 2.2 CD Playlist Widget
+            ImGui::BeginGroup();
+            {
+                const float actual_playlist_w = std::max(playlist_w, avail_w - widget_w - 24.0f - indent_x);
+                mycds::gui::RenderCdPlaylist(display_model, ImVec2(actual_playlist_w, playlist_h));
+            }
+            ImGui::EndGroup();
         }
-
-        // Left Column: Main CD Player Display + Future Widgets Space + Transport Controls
-        ImGui::BeginGroup();
-        {
-            // Phase 2.1: CD Player Display Widget
-            mycds::gui::RenderCdDisplay(display_model, ImVec2(widget_w, widget_h));
-
-            // Phase 2.3: LED volume indicator
-            mycds::gui::RenderCdVolumeMeter(display_model, ImVec2(widget_w, 90.0f));
-
-            // Phase 2.4: Controls Widget (Hardware buttons, backlit cyan pictograms, rotary knobs)
-            mycds::gui::RenderCdControls(display_model, ImVec2(widget_w, 116.0f));
-        }
-        ImGui::EndGroup();
-
-        ImGui::SameLine(0.0f, 24.0f);
-
-        // Right Column: Phase 2.2 CD Playlist Widget
-        ImGui::BeginGroup();
-        {
-            const float actual_playlist_w = std::max(playlist_w, avail_w - widget_w - 24.0f - indent_x);
-            mycds::gui::RenderCdPlaylist(display_model, ImVec2(actual_playlist_w, playlist_h));
-        }
-        ImGui::EndGroup();
 
         ImGui::End();
         ImGui::PopStyleColor();

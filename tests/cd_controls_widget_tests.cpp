@@ -6,6 +6,7 @@
 #include "gui/cd_controls_widget.h"
 #include "gui/cd_display_model.h"
 #include "gui/cd_display_widget.h"
+#include "gui/cd_eject_menu_widget.h"
 #include "imgui.h"
 
 using namespace mycds::gui;
@@ -39,7 +40,7 @@ TEST_F(CdControlsWidgetTest, InitialControlsState) {
 
     EXPECT_DOUBLE_EQ(model.volume(), 0.8);
     EXPECT_DOUBLE_EQ(model.balance(), 0.0);
-    EXPECT_FALSE(model.is_eject_dialog_open());
+    EXPECT_FALSE(model.is_eject_menu_open());
     EXPECT_TRUE(model.is_playing());
 }
 
@@ -110,8 +111,8 @@ TEST_F(CdControlsWidgetTest, LoadDiscUpdatesAlbumAndTracks) {
         {3, 180, "Track Three"}
     };
 
-    model.open_eject_dialog();
-    EXPECT_TRUE(model.is_eject_dialog_open());
+    model.open_eject_menu();
+    EXPECT_TRUE(model.is_eject_menu_open());
 
     model.load_disc("Custom Master Disc", custom_tracks);
     EXPECT_EQ(model.album_title(), "Custom Master Disc");
@@ -120,7 +121,7 @@ TEST_F(CdControlsWidgetTest, LoadDiscUpdatesAlbumAndTracks) {
     EXPECT_EQ(model.tracks()[0].title, "Track One");
     EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
     EXPECT_TRUE(model.is_playing());
-    EXPECT_FALSE(model.is_eject_dialog_open());
+    EXPECT_FALSE(model.is_eject_menu_open());
 }
 
 TEST_F(CdControlsWidgetTest, RenderCdControlsHeadlessExecution) {
@@ -143,23 +144,36 @@ TEST_F(CdControlsWidgetTest, RenderCdControlsHeadlessExecution) {
     ImGui::Render();
 }
 
-TEST_F(CdControlsWidgetTest, RenderCdControlsWithEjectModalOpen) {
+TEST_F(CdControlsWidgetTest, RenderEjectMenuAllScreensHeadlessExecution) {
     CdDisplayModel model;
-    model.open_eject_dialog();
+    model.open_eject_menu();
 
-    ImGui::NewFrame();
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(ImVec2(1460, 600));
-    ImGui::Begin("TestWindow", nullptr, ImGuiWindowFlags_NoDecoration);
+    const EjectMenuScreen screens[] = {
+        EjectMenuScreen::Cd,
+        EjectMenuScreen::ImageFile,
+        EjectMenuScreen::Library,
+        EjectMenuScreen::DiskInfo,
+        EjectMenuScreen::Settings
+    };
 
-    RenderCdControls(model, ImVec2(680.0f, 116.0f));
+    for (EjectMenuScreen screen : screens) {
+        model.set_active_eject_screen(screen);
 
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ASSERT_NE(draw_list, nullptr);
-    EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImVec2(1460, 600));
+        ImGui::Begin("TestWindow", nullptr, ImGuiWindowFlags_NoDecoration);
 
-    ImGui::End();
-    ImGui::Render();
+        RenderEjectMenu(model, ImVec2(1412.0f, 560.0f));
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        ASSERT_NE(draw_list, nullptr);
+        EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
+        EXPECT_GT(draw_list->VtxBuffer.size(), 0);
+
+        ImGui::End();
+        ImGui::Render();
+    }
 }
 
 TEST_F(CdControlsWidgetTest, RenderCdControlsWhileRecording) {

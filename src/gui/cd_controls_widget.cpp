@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "cd_brushed_metal.h"
+#include "cd_ui_style.h"
 #include "imgui.h"
 
 namespace mycds::gui {
@@ -14,34 +15,6 @@ namespace mycds::gui {
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
-
-// Color palette for hardware buttons and sockets
-constexpr ImU32 kColSocketBg = IM_COL32(14, 15, 18, 255);
-constexpr ImU32 kColSocketInnerShadow = IM_COL32(6, 6, 8, 240);
-constexpr ImU32 kColSocketBezelLight = IM_COL32(46, 49, 56, 140);
-
-// Brushed metal button tones (darker titanium/gunmetal grey)
-constexpr ImU32 kColBtnMetalBase = IM_COL32(74, 77, 84, 255);
-constexpr ImU32 kColBtnMetalHover = IM_COL32(90, 94, 102, 255);
-constexpr ImU32 kColBtnMetalActive = IM_COL32(56, 58, 64, 255);
-
-// 3D Machined bevel chamfers
-constexpr ImU32 kColBevelTopLight = IM_COL32(165, 172, 188, 220);
-constexpr ImU32 kColBevelLeftLight = IM_COL32(130, 136, 148, 180);
-constexpr ImU32 kColBevelBottomShadow = IM_COL32(22, 24, 28, 255);
-constexpr ImU32 kColBevelRightShadow = IM_COL32(36, 38, 44, 190);
-
-// Inverted bevels for depressed button state
-constexpr ImU32 kColBevelDepressedTop = IM_COL32(16, 17, 20, 255);
-constexpr ImU32 kColBevelDepressedLeft = IM_COL32(22, 24, 28, 220);
-constexpr ImU32 kColBevelDepressedBottom = IM_COL32(135, 140, 155, 170);
-constexpr ImU32 kColBevelDepressedRight = IM_COL32(110, 115, 126, 140);
-
-// Cyan-blue backlight colors for softly diffused illumination
-constexpr ImU32 kColCyanGlowCore = IM_COL32(180, 248, 255, 230);
-constexpr ImU32 kColCyanBright = IM_COL32(0, 230, 255, 210);
-constexpr ImU32 kColCyanMuted = IM_COL32(0, 155, 190, 140);
-constexpr ImU32 kColCyanBloomBase = IM_COL32(0, 230, 255, 160);
 
 // Long press seeking state tracking
 struct SeekPressTracker {
@@ -52,130 +25,6 @@ struct SeekPressTracker {
 
 static SeekPressTracker s_prev_tracker;
 static SeekPressTracker s_next_tracker;
-
-void DrawButtonBrushedFace(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, bool hovered, bool pressed) {
-    const ImU32 base_col = pressed ? kColBtnMetalActive : (hovered ? kColBtnMetalHover : kColBtnMetalBase);
-
-    // Solid titanium/gunmetal button face
-    draw_list->AddRectFilled(min_pos, max_pos, base_col, 2.5f);
-
-    // Realistic brushed titanium micro-hairlines: Sample pre-baked grain texture in 1 quad
-    if (GetBrushedMetal().IsInitialized() && GetBrushedMetal().GetButtonTextureId() != 0) {
-        const float w = max_pos.x - min_pos.x;
-        const float h = max_pos.y - min_pos.y;
-        constexpr float grain_size = 64.0f;
-        // Step in 1:1 pixel coords so each scanline maps directly to a discrete hairline
-        const float u0 = std::floor(min_pos.x * 0.5f) / grain_size;
-        const float v0 = std::floor(min_pos.y) / grain_size;
-        const float u1 = u0 + (w / grain_size);
-        const float v1 = v0 + (h / grain_size);
-
-        draw_list->AddImageRounded(
-            GetBrushedMetal().GetButtonTextureRef(),
-            min_pos, max_pos,
-            ImVec2(u0, v0), ImVec2(u1, v1),
-            IM_COL32_WHITE, 2.5f
-        );
-    }
-
-    // Overhead ambient gradient
-    draw_list->AddRectFilledMultiColor(
-        min_pos, max_pos,
-        IM_COL32(255, 255, 255, 14),
-        IM_COL32(255, 255, 255, 14),
-        IM_COL32(0, 0, 0, 24),
-        IM_COL32(0, 0, 0, 24)
-    );
-
-    // Bevel edges
-    if (!pressed) {
-        draw_list->AddLine(ImVec2(min_pos.x, min_pos.y), ImVec2(max_pos.x, min_pos.y), kColBevelTopLight, 1.2f);
-        draw_list->AddLine(ImVec2(min_pos.x, min_pos.y), ImVec2(min_pos.x, max_pos.y), kColBevelLeftLight, 1.0f);
-        draw_list->AddLine(ImVec2(min_pos.x, max_pos.y - 1.0f), ImVec2(max_pos.x, max_pos.y - 1.0f), kColBevelBottomShadow, 1.2f);
-        draw_list->AddLine(ImVec2(max_pos.x - 1.0f, min_pos.y), ImVec2(max_pos.x - 1.0f, max_pos.y), kColBevelRightShadow, 1.0f);
-    } else {
-        draw_list->AddLine(ImVec2(min_pos.x, min_pos.y), ImVec2(max_pos.x, min_pos.y), kColBevelDepressedTop, 1.2f);
-        draw_list->AddLine(ImVec2(min_pos.x, min_pos.y), ImVec2(min_pos.x, max_pos.y), kColBevelDepressedLeft, 1.0f);
-        draw_list->AddLine(ImVec2(min_pos.x, max_pos.y - 1.0f), ImVec2(max_pos.x, max_pos.y - 1.0f), kColBevelDepressedBottom, 1.2f);
-        draw_list->AddLine(ImVec2(max_pos.x - 1.0f, min_pos.y), ImVec2(max_pos.x - 1.0f, max_pos.y), kColBevelDepressedRight, 1.0f);
-    }
-}
-
-void DrawHardwareButtonSocket(ImDrawList* draw_list, const ImVec2& socket_min, const ImVec2& socket_max) {
-    draw_list->AddRectFilled(socket_min, socket_max, kColSocketBg, 3.5f);
-    draw_list->AddLine(ImVec2(socket_min.x, socket_min.y), ImVec2(socket_max.x, socket_min.y), kColSocketInnerShadow, 1.0f);
-    draw_list->AddLine(ImVec2(socket_min.x, socket_min.y), ImVec2(socket_min.x, socket_max.y), kColSocketInnerShadow, 1.0f);
-    draw_list->AddLine(ImVec2(socket_min.x, socket_max.y), ImVec2(socket_max.x, socket_max.y), kColSocketBezelLight, 1.0f);
-    draw_list->AddLine(ImVec2(socket_max.x, socket_min.y), ImVec2(socket_max.x, socket_max.y), kColSocketBezelLight, 1.0f);
-}
-
-// -----------------------------------------------------------------------------
-// Soft Diffuse Backlight Geometry Helpers
-// -----------------------------------------------------------------------------
-
-void DrawDiffusedTriangle(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2, const ImVec2& p3,
-                          ImU32 core_col, bool is_bright) {
-    if (!draw_list) {
-        return;
-    }
-
-    // Ensure strictly clockwise winding for ImDrawFlags_StrokeInside.
-    // In screen coordinates (Y downwards), clockwise triangle has cross product (p2-p1) x (p3-p2) > 0.
-    const float cross = (p2.x - p1.x) * (p3.y - p2.y) - (p2.y - p1.y) * (p3.x - p2.x);
-    const ImVec2 a = p1;
-    const ImVec2 b = (cross < 0.0f) ? p3 : p2;
-    const ImVec2 c = (cross < 0.0f) ? p2 : p3;
-
-    // Subtle soft stencil drop shadow
-    draw_list->AddTriangleFilled(ImVec2(a.x + 1.0f, a.y + 1.2f),
-                                 ImVec2(b.x + 1.0f, b.y + 1.2f),
-                                 ImVec2(c.x + 1.0f, c.y + 1.2f),
-                                 IM_COL32(10, 14, 20, 80));
-
-    // Multi-tier diffuse bloom halos (soft gradual falloff)
-    const ImU32 bloom_outer = is_bright ? IM_COL32(0, 220, 255, 35) : IM_COL32(0, 180, 220, 20);
-    const ImU32 bloom_mid   = is_bright ? IM_COL32(0, 230, 255, 75) : IM_COL32(0, 190, 230, 45);
-    const ImU32 bloom_inner = is_bright ? IM_COL32(60, 240, 255, 140) : IM_COL32(20, 195, 230, 80);
-
-    draw_list->AddTriangle(a, b, c, bloom_outer, 3.5f);
-    draw_list->AddTriangle(a, b, c, bloom_mid, 2.0f);
-    draw_list->AddTriangle(a, b, c, bloom_inner, 1.0f);
-
-    // Blended translucent core fill
-    draw_list->AddTriangleFilled(a, b, c, core_col);
-}
-
-void DrawDiffusedRect(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, float rounding,
-                      ImU32 core_col, bool is_bright) {
-    // Subtle soft stencil drop shadow
-    draw_list->AddRectFilled(ImVec2(min_pos.x + 1.0f, min_pos.y + 1.2f),
-                             ImVec2(max_pos.x + 1.0f, max_pos.y + 1.2f),
-                             IM_COL32(10, 14, 20, 80), rounding);
-
-    const ImU32 bloom_outer = is_bright ? IM_COL32(0, 220, 255, 35) : IM_COL32(0, 180, 220, 20);
-    const ImU32 bloom_mid   = is_bright ? IM_COL32(0, 230, 255, 75) : IM_COL32(0, 190, 230, 45);
-    const ImU32 bloom_inner = is_bright ? IM_COL32(60, 240, 255, 140) : IM_COL32(20, 195, 230, 80);
-
-    draw_list->AddRect(min_pos, max_pos, bloom_outer, rounding, 0, 4.5f);
-    draw_list->AddRect(min_pos, max_pos, bloom_mid, rounding, 0, 2.5f);
-    draw_list->AddRect(min_pos, max_pos, bloom_inner, rounding, 0, 1.2f);
-
-    // Blended translucent core fill
-    draw_list->AddRectFilled(min_pos, max_pos, core_col, rounding);
-}
-
-void DrawDiffusedLine(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2,
-                      ImU32 core_col, float core_thickness, bool is_bright) {
-    draw_list->AddLine(ImVec2(p1.x + 1.0f, p1.y + 1.2f), ImVec2(p2.x + 1.0f, p2.y + 1.2f),
-                       IM_COL32(10, 14, 20, 80), core_thickness);
-
-    const ImU32 bloom_outer = is_bright ? IM_COL32(0, 220, 255, 35) : IM_COL32(0, 180, 220, 20);
-    const ImU32 bloom_mid   = is_bright ? IM_COL32(0, 230, 255, 75) : IM_COL32(0, 190, 230, 45);
-
-    draw_list->AddLine(p1, p2, bloom_outer, core_thickness + 3.8f);
-    draw_list->AddLine(p1, p2, bloom_mid, core_thickness + 1.8f);
-    draw_list->AddLine(p1, p2, core_col, core_thickness);
-}
 
 // -----------------------------------------------------------------------------
 // Graphical Pictograms with Diffuse Backlighting and Centered Geometry
@@ -578,222 +427,6 @@ void RenderHardwareKnob(
     }
 }
 
-// -----------------------------------------------------------------------------
-// Eject / Load Modal Dialog
-// -----------------------------------------------------------------------------
-
-void RenderEjectLoadModal(CdDisplayModel& model) {
-    if (model.is_eject_dialog_open()) {
-        ImGui::OpenPopup("Load / Eject Disc");
-    }
-
-    ImGui::SetNextWindowSize(ImVec2(540.0f, 380.0f), ImGuiCond_Appearing);
-
-    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.12f, 0.12f, 0.14f, 0.98f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.38f, 0.42f, 0.50f, 0.85f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-
-    bool dialog_open = true;
-    if (ImGui::BeginPopupModal("Load / Eject Disc", &dialog_open, ImGuiWindowFlags_NoResize)) {
-        ImGui::TextColored(ImVec4(0.0f, 0.92f, 1.0f, 1.0f), "Hi-Fi Optical Transport & Media Loader");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (ImGui::BeginTabBar("LoadOptionsTabBar")) {
-            // Tab 1: Physical CD Drive
-            if (ImGui::BeginTabItem("Physical CD")) {
-                ImGui::Spacing();
-                ImGui::Text("Optical Drive:");
-                static int selected_drive = 0;
-                const char* drives[] = {"/dev/sr0 [HL-DT-ST BD-RE WH16NS40]", "/dev/cdrom [Generic CD/DVD-ROM]"};
-                ImGui::Combo("##DriveSelector", &selected_drive, drives, IM_ARRAYSIZE(drives));
-
-                ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), "[DISC READY] Audio CD detected (12 tracks, 47:32)");
-                ImGui::Text("TOC Status: Valid Lead-in / CD-DA Audio Stream");
-                ImGui::Spacing();
-
-                if (ImGui::Button("Load Disc", ImVec2(130.0f, 32.0f))) {
-                    const std::vector<TrackInfo> cd_tracks = {
-                        {1, 222, "Speak to Me / Breathe"},
-                        {2, 255, "On the Run"},
-                        {3, 178, "Time"},
-                        {4, 321, "The Great Gig in the Sky"},
-                        {5, 192, "Money"},
-                        {6, 288, "Us and Them"},
-                        {7, 364, "Any Colour You Like"},
-                        {8, 213, "Brain Damage"},
-                        {9, 260, "Eclipse"},
-                        {10, 165, "Shine On You Crazy Diamond (Part I)"},
-                        {11, 310, "Welcome to the Machine"},
-                        {12, 230, "Wish You Were Here"}
-                    };
-                    model.load_disc("The Dark Side of the Moon (CD-DA)", cd_tracks);
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Eject Tray", ImVec2(120.0f, 32.0f))) {
-                    model.stop();
-                }
-
-                ImGui::EndTabItem();
-            }
-
-            // Tab 2: Disk Image File (.cue, .iso, .toc, .bin)
-            if (ImGui::BeginTabItem("Image from Disk")) {
-                ImGui::Spacing();
-                static char image_path[256] = "/home/music/images/AbbeyRoad.cue";
-                ImGui::Text("Disc Image File (.cue, .iso, .toc, .bin, .nrg):");
-                ImGui::InputText("##ImagePath", image_path, sizeof(image_path));
-
-                ImGui::Spacing();
-                ImGui::Text("Quick Select Sample Images:");
-                if (ImGui::Button("Dark Side of the Moon (.cue)")) {
-                    std::snprintf(image_path, sizeof(image_path), "/music/PinkFloyd_DarkSide.cue");
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Abbey Road (.cue)")) {
-                    std::snprintf(image_path, sizeof(image_path), "/music/TheBeatles_AbbeyRoad.cue");
-                }
-                if (ImGui::Button("Wish You Were Here (.toc)")) {
-                    std::snprintf(image_path, sizeof(image_path), "/music/PinkFloyd_WYWH.toc");
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Kind of Blue (.bin)")) {
-                    std::snprintf(image_path, sizeof(image_path), "/music/MilesDavis_KindBlue.bin");
-                }
-
-                ImGui::Spacing();
-                if (ImGui::Button("Load Image File", ImVec2(150.0f, 32.0f))) {
-                    const std::vector<TrackInfo> image_tracks = {
-                        {1, 260, "Come Together"},
-                        {2, 182, "Something"},
-                        {3, 207, "Maxwell's Silver Hammer"},
-                        {4, 196, "Oh! Darling"},
-                        {5, 171, "Octopus's Garden"},
-                        {6, 467, "I Want You (She's So Heavy)"},
-                        {7, 185, "Here Comes the Sun"},
-                        {8, 165, "Because"},
-                        {9, 243, "You Never Give Me Your Money"},
-                        {10, 146, "Sun King"},
-                        {11, 66, "Mean Mr. Mustard"},
-                        {12, 73, "Polythene Pam"},
-                        {13, 91, "She Came In Through the Bathroom Window"},
-                        {14, 91, "Golden Slumbers"},
-                        {15, 96, "Carry That Weight"},
-                        {16, 141, "The End"},
-                        {17, 23, "Her Majesty"}
-                    };
-                    model.load_disc("The Beatles - Abbey Road (CUE/FLAC)", image_tracks);
-                    ImGui::CloseCurrentPopup();
-                }
-
-                ImGui::EndTabItem();
-            }
-
-            // Tab 3: CD Library
-            if (ImGui::BeginTabItem("CD Library")) {
-                ImGui::Spacing();
-                static char search_buf[64] = "";
-                ImGui::InputTextWithHint("##LibSearch", "Search library albums or artists...", search_buf, sizeof(search_buf));
-
-                static int selected_album = 0;
-                const char* library_albums[] = {
-                    "Pink Floyd - The Dark Side of the Moon (1973) [12 Tracks]",
-                    "The Beatles - Abbey Road (1969) [17 Tracks]",
-                    "Pink Floyd - Wish You Were Here (1975) [5 Tracks]",
-                    "Miles Davis - Kind of Blue (1959) [5 Tracks]",
-                    "Daft Punk - Random Access Memories (2013) [13 Tracks]",
-                    "Fleetwood Mac - Rumours (1977) [11 Tracks]"
-                };
-
-                ImGui::Spacing();
-                ImGui::ListBox("##LibraryList", &selected_album, library_albums, IM_ARRAYSIZE(library_albums), 5);
-
-                ImGui::Spacing();
-                if (ImGui::Button("Load Selected Album", ImVec2(170.0f, 32.0f))) {
-                    if (selected_album == 1) {
-                        const std::vector<TrackInfo> abbey_road = {
-                            {1, 260, "Come Together"},
-                            {2, 182, "Something"},
-                            {3, 207, "Maxwell's Silver Hammer"},
-                            {4, 196, "Oh! Darling"},
-                            {5, 171, "Octopus's Garden"},
-                            {6, 467, "I Want You (She's So Heavy)"},
-                            {7, 185, "Here Comes the Sun"},
-                            {8, 165, "Because"},
-                            {9, 243, "You Never Give Me Your Money"}
-                        };
-                        model.load_disc("The Beatles - Abbey Road", abbey_road);
-                    } else if (selected_album == 2) {
-                        const std::vector<TrackInfo> wywh = {
-                            {1, 810, "Shine On You Crazy Diamond (Parts I-V)"},
-                            {2, 452, "Welcome to the Machine"},
-                            {3, 308, "Have a Cigar"},
-                            {4, 340, "Wish You Were Here"},
-                            {5, 748, "Shine On You Crazy Diamond (Parts VI-IX)"}
-                        };
-                        model.load_disc("Pink Floyd - Wish You Were Here", wywh);
-                    } else if (selected_album == 3) {
-                        const std::vector<TrackInfo> kind_of_blue = {
-                            {1, 562, "So What"},
-                            {2, 584, "Freddie Freeloader"},
-                            {3, 592, "Blue in Green"},
-                            {4, 693, "All Blues"},
-                            {5, 565, "Flamenco Sketches"}
-                        };
-                        model.load_disc("Miles Davis - Kind of Blue", kind_of_blue);
-                    } else if (selected_album == 4) {
-                        const std::vector<TrackInfo> ram = {
-                            {1, 274, "Give Life Back to Music"},
-                            {2, 321, "The Game of Love"},
-                            {3, 544, "Giorgio by Moroder"},
-                            {4, 228, "Within"},
-                            {5, 335, "Instant Crush"},
-                            {6, 353, "Lose Yourself to Dance"},
-                            {7, 405, "Touch"},
-                            {8, 368, "Get Lucky"}
-                        };
-                        model.load_disc("Daft Punk - Random Access Memories", ram);
-                    } else {
-                        const std::vector<TrackInfo> default_tracks = {
-                            {1, 222, "Speak to Me / Breathe"},
-                            {2, 255, "On the Run"},
-                            {3, 178, "Time"},
-                            {4, 321, "The Great Gig in the Sky"},
-                            {5, 192, "Money"},
-                            {6, 288, "Us and Them"},
-                            {7, 364, "Any Colour You Like"},
-                            {8, 213, "Brain Damage"},
-                            {9, 260, "Eclipse"}
-                        };
-                        model.load_disc("The Dark Side of the Moon", default_tracks);
-                    }
-                    ImGui::CloseCurrentPopup();
-                }
-
-                ImGui::EndTabItem();
-            }
-
-            ImGui::EndTabBar();
-        }
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        if (ImGui::Button("Close", ImVec2(100.0f, 28.0f))) {
-            ImGui::CloseCurrentPopup();
-        }
-
-        ImGui::EndPopup();
-    } else {
-        model.close_eject_dialog();
-    }
-
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor(2);
-}
-
 } // namespace
 
 void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
@@ -860,10 +493,10 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
                             [&](const ImVec2& c, bool h, bool a) {
                                 DrawEjectPictogram(draw_list, c, h, a);
                             })) {
-        model.open_eject_dialog();
+        model.open_eject_menu();
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Eject / Load Disc (Physical CD, Disk Image, or Library)");
+        ImGui::SetTooltip("Open Eject / Load Menu (E)");
     }
     current_x += kNormalBtnSize + kBtnGap;
 
@@ -1057,9 +690,6 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
     if (static_cast<double>(bal_val) != model.balance()) {
         model.set_balance(static_cast<double>(bal_val));
     }
-
-    // Modal Eject/Load dialog
-    RenderEjectLoadModal(model);
 
     // Advance cursor past the controls widget
     ImGui::SetCursorScreenPos(ImVec2(panel_min.x, panel_max.y + 8.0f));
