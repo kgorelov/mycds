@@ -74,11 +74,10 @@ Profiling via `gprofng` / `gp-collect-app` and static inspection highlights four
 - **Render Loop:** In [src/gui/cd_brushed_metal.cpp](file:///home/kgorelov/git/mycds/src/gui/cd_brushed_metal.cpp#L254), draws the entire faceplate using a single `draw_list->AddImage()` quad with automatic fallback to direct procedural rendering if OpenGL FBO is unavailable.
 - **Verification:** Tested across all platforms with headless safety checks and an integrated OpenGL FBO test suite in [tests/cd_brushed_metal_tests.cpp](file:///home/kgorelov/git/mycds/tests/cd_brushed_metal_tests.cpp#L127-L186).
 
-### Phase 4: Button Face Noise & Static Geometry Optimization (Low Priority)
+### Phase 4: Button Face Noise & Static Geometry Optimization [COMPLETED]
 *Target: Eliminate redundant CPU mathematical evaluations per frame.*
+*Result: Eliminated 240 `AddLine` calls per frame across button faces, avoided multi-pass overdraw on unlit LEDs, precomputed 7-segment digit geometry templates, and cached procedural brushed metal pixels on startup.*
 
-- In [src/gui/cd_controls_widget.cpp#L64](file:///home/kgorelov/git/mycds/src/gui/cd_controls_widget.cpp#L64), replace the procedural `for` loop executing `Hash1D()` on every scanline with:
-  - A precomputed 1D or 2D noise lookup table (LUT).
-  - Or a small pre-baked texture slice sampled for button surfaces.
-- For unlit LED segments and static display bezels, avoid redundant multi-pass glow polylines when segments are dark.
-- Pre-generate the static brushed metal procedural texture at compile time or initialize statically on first launch (as outlined in `todo.org`).
+- **Brushed Metal Button Surfaces:** In [src/gui/cd_controls_widget.cpp](file:///home/kgorelov/git/mycds/src/gui/cd_controls_widget.cpp#L56-L79), replaced the procedural 30-scanline `Hash1D()` `for` loop with a single textured quad (`draw_list->AddImageRounded()`) sampling the pre-baked brushed metal texture, eliminating 240 vector lines and per-frame pseudo-random math.
+- **Unlit LED & Display Geometry:** In [src/gui/cd_volume_meter_widget.cpp](file:///home/kgorelov/git/mycds/src/gui/cd_volume_meter_widget.cpp#L61-L115), consolidated unlit LED rendering to a single draw call without redundant well overdraw. In [src/gui/cd_display_widget.cpp](file:///home/kgorelov/git/mycds/src/gui/cd_display_widget.cpp#L60-L165), introduced `kDefaultDigitTemplate` to eliminate ~168 dynamic slant and trigonometry operations per frame for the standard 7-segment digits.
+- **Procedural Texture Pixel Caching:** In [src/gui/cd_brushed_metal.cpp](file:///home/kgorelov/git/mycds/src/gui/cd_brushed_metal.cpp#L58-L167), cached the default 512x128 procedural metal pixels on first launch, ensuring subsequent initializations bypass noise synthesis entirely.

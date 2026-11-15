@@ -44,6 +44,9 @@ public:
     GLuint GetTextureId() const { return texture_id_; }
     ImTextureRef GetTextureRef() const;
 
+    GLuint GetButtonTextureId() const { return button_texture_id_; }
+    ImTextureRef GetButtonTextureRef() const;
+
     // FBO Caching API
     void InvalidateCache();
     bool RebuildCache(int width, int height);
@@ -60,11 +63,13 @@ public:
     void RenderChassisBolt(ImDrawList* draw_list, const ImVec2& center, float radius = 7.0f);
 
     static std::vector<RgbaPixel> GeneratePixels(int width, int height, uint32_t seed = 0x4D594344);
+    static std::vector<RgbaPixel> GenerateButtonGrainPixels(int width = 64, int height = 64, uint32_t seed = 0x42544E31);
 
 private:
     void DestroyFbo();
 
     GLuint texture_id_{0};
+    GLuint button_texture_id_{0};
     int width_{0};
     int height_{0};
     bool initialized_{false};

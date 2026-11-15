@@ -53,29 +53,29 @@ struct SeekPressTracker {
 static SeekPressTracker s_prev_tracker;
 static SeekPressTracker s_next_tracker;
 
-// Pseudo-random line generator for micro-brushed metal texture on buttons
-float Hash1D(int x) {
-    uint32_t n = static_cast<uint32_t>(x);
-    n = (n << 13) ^ n;
-    n = n * (n * n * 15731 + 789221) + 1376312589;
-    return static_cast<float>(n & 0x7FFFFFFF) / 2147483648.0f;
-}
-
 void DrawButtonBrushedFace(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, bool hovered, bool pressed) {
     const ImU32 base_col = pressed ? kColBtnMetalActive : (hovered ? kColBtnMetalHover : kColBtnMetalBase);
+
+    // Solid titanium/gunmetal button face
     draw_list->AddRectFilled(min_pos, max_pos, base_col, 2.5f);
 
-    // Subtle horizontal brushed hairlines
-    const int start_y = static_cast<int>(min_pos.y + 1);
-    const int end_y = static_cast<int>(max_pos.y - 1);
-    for (int y = start_y; y < end_y; y += 2) {
-        const float noise = Hash1D(y * 31 + 17) * 2.0f - 1.0f;
-        const ImU32 line_col = (noise > 0.0f)
-            ? IM_COL32(255, 255, 255, static_cast<int>(8.0f * noise))
-            : IM_COL32(0, 0, 0, static_cast<int>(10.0f * (-noise)));
-        draw_list->AddLine(ImVec2(min_pos.x + 2.0f, static_cast<float>(y)),
-                           ImVec2(max_pos.x - 2.0f, static_cast<float>(y)),
-                           line_col, 1.0f);
+    // Realistic brushed titanium micro-hairlines: Sample pre-baked grain texture in 1 quad
+    if (GetBrushedMetal().IsInitialized() && GetBrushedMetal().GetButtonTextureId() != 0) {
+        const float w = max_pos.x - min_pos.x;
+        const float h = max_pos.y - min_pos.y;
+        constexpr float grain_size = 64.0f;
+        // Step in 1:1 pixel coords so each scanline maps directly to a discrete hairline
+        const float u0 = std::floor(min_pos.x * 0.5f) / grain_size;
+        const float v0 = std::floor(min_pos.y) / grain_size;
+        const float u1 = u0 + (w / grain_size);
+        const float v1 = v0 + (h / grain_size);
+
+        draw_list->AddImageRounded(
+            GetBrushedMetal().GetButtonTextureRef(),
+            min_pos, max_pos,
+            ImVec2(u0, v0), ImVec2(u1, v1),
+            IM_COL32_WHITE, 2.5f
+        );
     }
 
     // Overhead ambient gradient

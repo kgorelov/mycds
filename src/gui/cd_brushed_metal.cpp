@@ -60,6 +60,15 @@ std::vector<RgbaPixel> CdBrushedMetal::GeneratePixels(int width, int height, uin
         return {};
     }
 
+    static std::vector<RgbaPixel> s_cached_default_pixels;
+    static bool s_has_default_cached = false;
+
+    if (width == kDefaultTileSizeWidth && height == kDefaultTileSizeHeight && seed == 0x4D594344) {
+        if (s_has_default_cached) {
+            return s_cached_default_pixels;
+        }
+    }
+
     std::vector<RgbaPixel> pixels(width * height);
 
     uint32_t state = seed;
@@ -152,6 +161,48 @@ std::vector<RgbaPixel> CdBrushedMetal::GeneratePixels(int width, int height, uin
         }
     }
 
+    if (width == kDefaultTileSizeWidth && height == kDefaultTileSizeHeight && seed == 0x4D594344) {
+        s_cached_default_pixels = pixels;
+        s_has_default_cached = true;
+    }
+
+    return pixels;
+}
+
+std::vector<RgbaPixel> CdBrushedMetal::GenerateButtonGrainPixels(int width, int height, uint32_t seed) {
+    if (width <= 0 || height <= 0) {
+        return {};
+    }
+
+    std::vector<RgbaPixel> pixels(width * height);
+    for (int y = 0; y < height; ++y) {
+        uint32_t n = static_cast<uint32_t>(y * 15731 + seed);
+        n = (n << 13) ^ n;
+        n = n * (n * n * 15731 + 789221) + 1376312589;
+        const float row_n = static_cast<float>(n & 0x7FFFFFFF) / 2147483648.0f;
+
+        uint8_t r = 0, g = 0, b = 0;
+        int base_a = 0;
+
+        if (row_n > 0.58f) {
+            r = g = b = 255;
+            base_a = static_cast<int>((row_n - 0.58f) / 0.42f * 42.0f);
+        } else if (row_n < 0.42f) {
+            r = g = b = 0;
+            base_a = static_cast<int>((0.42f - row_n) / 0.42f * 38.0f);
+        }
+
+        for (int x = 0; x < width; ++x) {
+            if (base_a == 0) {
+                pixels[y * width + x] = {0, 0, 0, 0};
+                continue;
+            }
+            uint32_t nx = (n * 33 + static_cast<uint32_t>(x)) * 1664525u + 1013904223u;
+            const float x_n = 0.8f + (static_cast<float>(nx & 0xFFFF) / 65535.0f) * 0.4f;
+            const int a = std::max(0, std::min(255, static_cast<int>(base_a * x_n)));
+            pixels[y * width + x] = {r, g, b, static_cast<uint8_t>(a)};
+        }
+    }
     return pixels;
 }
 
@@ -181,6 +232,20 @@ bool CdBrushedMetal::Initialize(int width, int height) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width_, height_, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
         glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    const std::vector<RgbaPixel> btn_pixels = GenerateButtonGrainPixels(64, 64);
+    if (!btn_pixels.empty()) {
+        glGenTextures(1, &button_texture_id_);
+        if (button_texture_id_ != 0) {
+            glBindTexture(GL_TEXTURE_2D, button_texture_id_);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, btn_pixels.data());
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
     }
 
     initialized_ = true;
@@ -219,6 +284,10 @@ void CdBrushedMetal::Shutdown() {
         glDeleteTextures(1, &texture_id_);
         texture_id_ = 0;
     }
+    if (button_texture_id_ != 0) {
+        glDeleteTextures(1, &button_texture_id_);
+        button_texture_id_ = 0;
+    }
     initialized_ = false;
     width_ = 0;
     height_ = 0;
@@ -226,6 +295,10 @@ void CdBrushedMetal::Shutdown() {
 
 void CdBrushedMetal::InvalidateCache() {
     cache_dirty_ = true;
+}
+
+ImTextureRef CdBrushedMetal::GetButtonTextureRef() const {
+    return ImTextureRef(reinterpret_cast<void*>(static_cast<intptr_t>(button_texture_id_)));
 }
 
 ImTextureRef CdBrushedMetal::GetCachedTextureRef() const {
@@ -396,6 +469,16 @@ void CdBrushedMetal::RenderBackground(ImDrawList* draw_list, const ImVec2& scree
     } else {
         RenderBackgroundDirect(draw_list, screen_pos, screen_size);
     }
+
+    // 4 Corner heavy-duty faceplate bolts (classic Hi-Fi rack/chassis mount bolts)
+    // Rendered directly to preserve crisp sub-pixel specular highlights and hex socket geometry
+    constexpr float bolt_margin_x = 18.0f;
+    constexpr float bolt_margin_y = 16.0f;
+    const ImVec2 max_pos(screen_pos.x + screen_size.x, screen_pos.y + screen_size.y);
+    RenderChassisBolt(draw_list, ImVec2(screen_pos.x + bolt_margin_x, screen_pos.y + bolt_margin_y), 6.5f);
+    RenderChassisBolt(draw_list, ImVec2(max_pos.x - bolt_margin_x, screen_pos.y + bolt_margin_y), 6.5f);
+    RenderChassisBolt(draw_list, ImVec2(screen_pos.x + bolt_margin_x, max_pos.y - bolt_margin_y), 6.5f);
+    RenderChassisBolt(draw_list, ImVec2(max_pos.x - bolt_margin_x, max_pos.y - bolt_margin_y), 6.5f);
 }
 
 void CdBrushedMetal::RenderBackgroundDirect(ImDrawList* draw_list, const ImVec2& screen_pos, const ImVec2& screen_size) {
@@ -464,14 +547,6 @@ void CdBrushedMetal::RenderBackgroundDirect(ImDrawList* draw_list, const ImVec2&
     draw_list->AddLine(ImVec2(max_pos.x - 1.0f, screen_pos.y),
                        ImVec2(max_pos.x - 1.0f, max_pos.y),
                        IM_COL32(14, 14, 16, 200), 1.0f);
-
-    // 4 Corner heavy-duty faceplate bolts (classic Hi-Fi rack/chassis mount bolts)
-    constexpr float bolt_margin_x = 18.0f;
-    constexpr float bolt_margin_y = 16.0f;
-    RenderChassisBolt(draw_list, ImVec2(screen_pos.x + bolt_margin_x, screen_pos.y + bolt_margin_y), 6.5f);
-    RenderChassisBolt(draw_list, ImVec2(max_pos.x - bolt_margin_x, screen_pos.y + bolt_margin_y), 6.5f);
-    RenderChassisBolt(draw_list, ImVec2(screen_pos.x + bolt_margin_x, max_pos.y - bolt_margin_y), 6.5f);
-    RenderChassisBolt(draw_list, ImVec2(max_pos.x - bolt_margin_x, max_pos.y - bolt_margin_y), 6.5f);
 }
 
 void CdBrushedMetal::RenderPanelChassis(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, float rounding) {

@@ -62,36 +62,32 @@ void DrawSquareLed(ImDrawList* draw_list, ImVec2 pos, float size,
                    LedColorType col_type, bool is_lit, bool is_peak) {
     const ImVec2 max_pt(pos.x + size, pos.y + size);
 
-    // Dark well recess
-    draw_list->AddRectFilled(pos, max_pt, IM_COL32(6, 6, 8, 255), 1.0f);
-
-    ImU32 core_col = 0;
-    ImU32 glow_col = 0;
-    ImU32 hi_col = 0;
-    ImU32 unlit_col = 0;
-
-    switch (col_type) {
-        case LedColorType::Green:
-            core_col = kGreenLitCore;
-            glow_col = kGreenLitGlow;
-            hi_col = kGreenLitHi;
-            unlit_col = kGreenUnlit;
-            break;
-        case LedColorType::Yellow:
-            core_col = kYellowLitCore;
-            glow_col = kYellowLitGlow;
-            hi_col = kYellowLitHi;
-            unlit_col = kYellowUnlit;
-            break;
-        case LedColorType::Red:
-            core_col = kRedLitCore;
-            glow_col = kRedLitGlow;
-            hi_col = kRedLitHi;
-            unlit_col = kRedUnlit;
-            break;
-    }
-
     if (is_lit) {
+        // Dark well recess
+        draw_list->AddRectFilled(pos, max_pt, IM_COL32(6, 6, 8, 255), 1.0f);
+
+        ImU32 core_col = 0;
+        ImU32 glow_col = 0;
+        ImU32 hi_col = 0;
+
+        switch (col_type) {
+            case LedColorType::Green:
+                core_col = kGreenLitCore;
+                glow_col = kGreenLitGlow;
+                hi_col = kGreenLitHi;
+                break;
+            case LedColorType::Yellow:
+                core_col = kYellowLitCore;
+                glow_col = kYellowLitGlow;
+                hi_col = kYellowLitHi;
+                break;
+            case LedColorType::Red:
+                core_col = kRedLitCore;
+                glow_col = kRedLitGlow;
+                hi_col = kRedLitHi;
+                break;
+        }
+
         // Outer halo glow
         draw_list->AddRect(ImVec2(pos.x - 2.5f, pos.y - 2.5f),
                            ImVec2(max_pt.x + 2.5f, max_pt.y + 2.5f),
@@ -110,7 +106,9 @@ void DrawSquareLed(ImDrawList* draw_list, ImVec2 pos, float size,
             draw_list->AddRect(pos, max_pt, IM_COL32(255, 255, 255, 180), 1.0f, 0, 1.2f);
         }
     } else {
-        // Unlit dark LED
+        // Unlit dark LED: Single direct fill without redundant well overdraw
+        const ImU32 unlit_col = (col_type == LedColorType::Green) ? kGreenUnlit :
+                                ((col_type == LedColorType::Yellow) ? kYellowUnlit : kRedUnlit);
         draw_list->AddRectFilled(pos, max_pt, unlit_col, 1.0f);
         draw_list->AddRect(pos, max_pt, IM_COL32(20, 20, 24, 180), 1.0f, 0, 1.0f);
     }

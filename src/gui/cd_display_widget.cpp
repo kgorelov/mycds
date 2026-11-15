@@ -57,12 +57,108 @@ void DrawSlantedPoly(ImDrawList* draw_list, const ImVec2* pts, int count,
     }
 }
 
+struct SegmentTemplate {
+    ImVec2 pts[6];
+    int count{0};
+};
+
+struct DigitTemplate {
+    SegmentTemplate segments[7];
+};
+
+static const DigitTemplate kDefaultDigitTemplate = []() {
+    DigitTemplate tmpl;
+    constexpr float w = 40.0f;
+    constexpr float h = 76.0f;
+    constexpr float slant_factor = 0.08f;
+    constexpr float t = w * 0.15f;
+    constexpr float g = w * 0.04f;
+    constexpr float b = t * 0.5f;
+    constexpr float ym = h * 0.5f;
+
+    auto slant = [&](float lx, float ly) -> ImVec2 {
+        return ImVec2(lx + (h - ly) * slant_factor, ly);
+    };
+
+    // Segment A (Top)
+    tmpl.segments[0].count = 4;
+    tmpl.segments[0].pts[0] = slant(g + b, g);
+    tmpl.segments[0].pts[1] = slant(w - g - b, g);
+    tmpl.segments[0].pts[2] = slant(w - g - t, g + t);
+    tmpl.segments[0].pts[3] = slant(g + t, g + t);
+
+    // Segment B (Top-Right)
+    tmpl.segments[1].count = 4;
+    tmpl.segments[1].pts[0] = slant(w - g - t, g + t + b);
+    tmpl.segments[1].pts[1] = slant(w - g, g + b);
+    tmpl.segments[1].pts[2] = slant(w - g, ym - g * 0.5f - b);
+    tmpl.segments[1].pts[3] = slant(w - g - t, ym - g * 0.5f - t * 0.5f);
+
+    // Segment C (Bottom-Right)
+    tmpl.segments[2].count = 4;
+    tmpl.segments[2].pts[0] = slant(w - g - t, ym + g * 0.5f + t * 0.5f);
+    tmpl.segments[2].pts[1] = slant(w - g, ym + g * 0.5f + b);
+    tmpl.segments[2].pts[2] = slant(w - g, h - g - b);
+    tmpl.segments[2].pts[3] = slant(w - g - t, h - g - t - b);
+
+    // Segment D (Bottom)
+    tmpl.segments[3].count = 4;
+    tmpl.segments[3].pts[0] = slant(g + t, h - g - t);
+    tmpl.segments[3].pts[1] = slant(w - g - t, h - g - t);
+    tmpl.segments[3].pts[2] = slant(w - g - b, h - g);
+    tmpl.segments[3].pts[3] = slant(g + b, h - g);
+
+    // Segment E (Bottom-Left)
+    tmpl.segments[4].count = 4;
+    tmpl.segments[4].pts[0] = slant(g, ym + g * 0.5f + b);
+    tmpl.segments[4].pts[1] = slant(g + t, ym + g * 0.5f + t * 0.5f);
+    tmpl.segments[4].pts[2] = slant(g + t, h - g - t - b);
+    tmpl.segments[4].pts[3] = slant(g, h - g - b);
+
+    // Segment F (Top-Left)
+    tmpl.segments[5].count = 4;
+    tmpl.segments[5].pts[0] = slant(g, g + b);
+    tmpl.segments[5].pts[1] = slant(g + t, g + t + b);
+    tmpl.segments[5].pts[2] = slant(g + t, ym - g * 0.5f - t * 0.5f);
+    tmpl.segments[5].pts[3] = slant(g, ym - g * 0.5f - b);
+
+    // Segment G (Middle)
+    tmpl.segments[6].count = 6;
+    tmpl.segments[6].pts[0] = slant(g + b, ym);
+    tmpl.segments[6].pts[1] = slant(g + t, ym - t * 0.5f);
+    tmpl.segments[6].pts[2] = slant(w - g - t, ym - t * 0.5f);
+    tmpl.segments[6].pts[3] = slant(w - g - b, ym);
+    tmpl.segments[6].pts[4] = slant(w - g - t, ym + t * 0.5f);
+    tmpl.segments[6].pts[5] = slant(g + t, ym + t * 0.5f);
+
+    return tmpl;
+}();
+
 void DrawSevenSegmentDigit(ImDrawList* draw_list, ImVec2 origin, ImVec2 size,
                            char c, float slant_factor = 0.08f,
                            ImU32 lit_core = kAmberLitCore,
                            ImU32 lit_glow = kAmberLitGlow,
                            ImU32 unlit_col = kAmberUnlit) {
     const uint8_t mask = GetSegmentMask(c);
+
+    // Fast-path: use precalculated template for standard 40x76 digit with 0.08 slant
+    const bool is_default_size = (std::abs(size.x - 40.0f) < 0.001f &&
+                                  std::abs(size.y - 76.0f) < 0.001f &&
+                                  std::abs(slant_factor - 0.08f) < 0.001f);
+    if (is_default_size) {
+        ImVec2 pts[6];
+        for (int s = 0; s < 7; ++s) {
+            const bool lit = (mask & (1 << s)) != 0;
+            const int count = kDefaultDigitTemplate.segments[s].count;
+            for (int i = 0; i < count; ++i) {
+                pts[i] = ImVec2(origin.x + kDefaultDigitTemplate.segments[s].pts[i].x,
+                                origin.y + kDefaultDigitTemplate.segments[s].pts[i].y);
+            }
+            DrawSlantedPoly(draw_list, pts, count, lit ? lit_core : unlit_col, lit_glow, lit);
+        }
+        return;
+    }
+
     const float w = size.x;
     const float h = size.y;
     const float t = w * 0.15f;
