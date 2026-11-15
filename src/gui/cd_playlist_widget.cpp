@@ -162,7 +162,8 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     const float item_h = std::max(27.0f, track_text_h + 8.0f);
     const float avail_w = ImGui::GetContentRegionAvail().x;
 
-    for (const auto& track : model.tracks()) {
+    for (size_t track_idx = 0; track_idx < model.tracks().size(); ++track_idx) {
+        const auto& track = model.tracks()[track_idx];
         const bool is_active = (track.number == current_track_num);
         const ImVec2 row_pos = ImGui::GetCursorScreenPos();
         const ImVec2 row_size(avail_w, item_h);
@@ -202,8 +203,9 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
         std::snprintf(num_buf, sizeof(num_buf), "%02d", track.number);
         child_draw_list->AddText(ImVec2(row_pos.x + 18.0f, text_y), text_col, num_buf);
 
-        // Track title
-        child_draw_list->AddText(ImVec2(row_pos.x + 75.0f, text_y), text_col, track.title.c_str());
+        // Track title: actual title when CDDB data is available, otherwise "Track 1 .. Track N"
+        const std::string title_text = model.track_display_title(track_idx);
+        child_draw_list->AddText(ImVec2(row_pos.x + 75.0f, text_y), text_col, title_text.c_str());
 
         // Track duration
         char time_buf[16];

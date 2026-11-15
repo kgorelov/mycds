@@ -400,17 +400,23 @@ TEST(CdDisplayModelTests, ArtistAndAlbumCddbData) {
 
     // Before 3.0s uptime, CDDB data is inactive
     EXPECT_FALSE(model.has_cddb_data());
+    EXPECT_EQ(model.track_display_title(0), "Track 1");
+    EXPECT_EQ(model.track_display_title(1), "Track 2");
 
     // After 3.0s uptime with connectivity, CDDB data becomes active
     model.update(3.0);
     EXPECT_TRUE(model.has_cddb_data());
+    EXPECT_EQ(model.track_display_title(0), "Speak to Me / Breathe");
+    EXPECT_EQ(model.track_display_title(1), "On the Run");
 
-    // Disconnecting connectivity disables CDDB data
+    // Disconnecting connectivity disables CDDB data and reverts to generic track names
     model.set_connectivity(ConnectivityStatus::Disconnected);
     EXPECT_FALSE(model.has_cddb_data());
+    EXPECT_EQ(model.track_display_title(0), "Track 1");
 
     model.set_connectivity(ConnectivityStatus::Connected);
     EXPECT_TRUE(model.has_cddb_data());
+    EXPECT_EQ(model.track_display_title(0), "Speak to Me / Breathe");
 
     // Setting explicit has_cddb_data flag
     model.set_has_cddb_data(false);

@@ -87,6 +87,7 @@ public:
     [[nodiscard]] int total_tracks() const;
     [[nodiscard]] size_t current_track_index() const;
     [[nodiscard]] const std::vector<TrackInfo>& tracks() const;
+    [[nodiscard]] std::string track_display_title(size_t track_index) const;
 
     [[nodiscard]] double track_elapsed_seconds() const;
     [[nodiscard]] int track_duration_seconds() const;

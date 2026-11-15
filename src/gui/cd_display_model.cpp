@@ -367,6 +367,18 @@ const std::vector<TrackInfo>& CdDisplayModel::tracks() const {
     return tracks_;
 }
 
+std::string CdDisplayModel::track_display_title(size_t track_index) const {
+    if (track_index >= tracks_.size()) {
+        return {};
+    }
+    if (!has_cddb_data() || tracks_[track_index].title.empty()) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "Track %d", tracks_[track_index].number);
+        return std::string(buf);
+    }
+    return tracks_[track_index].title;
+}
+
 double CdDisplayModel::track_elapsed_seconds() const {
     return track_elapsed_seconds_;
 }
