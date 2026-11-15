@@ -133,9 +133,11 @@ int main(int argc, char* argv[]) {
             mycds::gui::GetBrushedMetal().InvalidateCache();
         }
         if (ev.type == SDL_EVENT_KEY_DOWN) {
-            if (ev.key.key == SDLK_Q || ev.key.key == 'Q' ||
-                ev.key.scancode == SDL_SCANCODE_Q ||
-                ev.key.key == SDLK_F10 || ev.key.scancode == SDL_SCANCODE_F10) {
+            if (ev.key.key == SDLK_F10 || ev.key.scancode == SDL_SCANCODE_F10) {
+                running = false;
+            }
+            if (!display_model.is_eject_menu_open() && !ImGui::GetIO().WantTextInput &&
+                (ev.key.key == SDLK_Q || ev.key.key == 'Q' || ev.key.scancode == SDL_SCANCODE_Q)) {
                 running = false;
             }
         }
@@ -207,7 +209,8 @@ int main(int argc, char* argv[]) {
         ImGui::NewFrame();
 
         // Keyboard controls
-        if (ImGui::IsKeyPressed(ImGuiKey_F10) || (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Q))) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F10) ||
+            (!display_model.is_eject_menu_open() && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Q))) {
             running = false;
         }
         if (display_model.is_eject_menu_open()) {

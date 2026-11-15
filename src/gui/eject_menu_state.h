@@ -28,11 +28,16 @@ public:
     void refresh();
 
     void select_entry(std::size_t index);
+    void move_selection(int delta);
     /// Activates an entry (enters directory, or selects file and returns true if ready to load).
     bool activate_entry(std::size_t index);
 
     void set_show_all_files(bool show_all);
     [[nodiscard]] bool show_all_files() const;
+
+    void set_filter_query(const std::string& query);
+    void clear_filter_query();
+    [[nodiscard]] const std::string& filter_query() const;
 
     [[nodiscard]] const std::filesystem::path& current_dir() const;
     [[nodiscard]] const std::vector<FileBrowserEntry>& entries() const;
@@ -45,11 +50,15 @@ public:
     static bool is_supported_image_extension(const std::filesystem::path& p);
 
 private:
+    void rebuild_filtered_entries();
+
     std::filesystem::path current_dir_{};
+    std::vector<FileBrowserEntry> all_entries_{};
     std::vector<FileBrowserEntry> entries_{};
     std::optional<std::size_t> selected_index_{};
     std::filesystem::path selected_file_{};
     bool show_all_files_{false};
+    std::string filter_query_{};
     std::string error_message_{};
 };
 

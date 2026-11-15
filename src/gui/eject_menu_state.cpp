@@ -97,20 +97,41 @@ bool FileBrowserState::navigate_to(const std::filesystem::path& dir) {
     std::sort(dirs.begin(), dirs.end(), by_name_ci);
     std::sort(files.begin(), files.end(), by_name_ci);
 
-    entries_.clear();
-    entries_.reserve(dirs.size() + files.size());
-    entries_.insert(entries_.end(),
-                    std::make_move_iterator(dirs.begin()),
-                    std::make_move_iterator(dirs.end()));
-    entries_.insert(entries_.end(),
-                    std::make_move_iterator(files.begin()),
-                    std::make_move_iterator(files.end()));
+    all_entries_.clear();
+    all_entries_.reserve(dirs.size() + files.size());
+    all_entries_.insert(all_entries_.end(),
+                        std::make_move_iterator(dirs.begin()),
+                        std::make_move_iterator(dirs.end()));
+    all_entries_.insert(all_entries_.end(),
+                        std::make_move_iterator(files.begin()),
+                        std::make_move_iterator(files.end()));
 
     current_dir_ = target_dir;
-    selected_index_.reset();
-    selected_file_.clear();
+    filter_query_.clear();
     error_message_.clear();
+    rebuild_filtered_entries();
     return true;
+}
+
+void FileBrowserState::rebuild_filtered_entries() {
+    entries_.clear();
+    if (filter_query_.empty()) {
+        entries_ = all_entries_;
+    } else {
+        const std::string q_lower = to_lower_ascii(filter_query_);
+        for (const auto& entry : all_entries_) {
+            if (to_lower_ascii(entry.name).find(q_lower) != std::string::npos) {
+                entries_.push_back(entry);
+            }
+        }
+    }
+
+    if (entries_.empty()) {
+        selected_index_.reset();
+        selected_file_.clear();
+    } else {
+        select_entry(0);
+    }
 }
 
 bool FileBrowserState::navigate_up() {
@@ -143,6 +164,20 @@ void FileBrowserState::select_entry(std::size_t index) {
     }
 }
 
+void FileBrowserState::move_selection(int delta) {
+    if (entries_.empty()) {
+        selected_index_.reset();
+        selected_file_.clear();
+        return;
+    }
+    const int current = selected_index_.has_value()
+        ? static_cast<int>(*selected_index_)
+        : 0;
+    const int max_idx = static_cast<int>(entries_.size()) - 1;
+    const int next = std::clamp(current + delta, 0, max_idx);
+    select_entry(static_cast<std::size_t>(next));
+}
+
 bool FileBrowserState::activate_entry(std::size_t index) {
     if (index >= entries_.size()) {
         return false;
@@ -167,6 +202,24 @@ void FileBrowserState::set_show_all_files(bool show_all) {
 
 bool FileBrowserState::show_all_files() const {
     return show_all_files_;
+}
+
+void FileBrowserState::set_filter_query(const std::string& query) {
+    if (filter_query_ != query) {
+        filter_query_ = query;
+        rebuild_filtered_entries();
+    }
+}
+
+void FileBrowserState::clear_filter_query() {
+    if (!filter_query_.empty()) {
+        filter_query_.clear();
+        rebuild_filtered_entries();
+    }
+}
+
+const std::string& FileBrowserState::filter_query() const {
+    return filter_query_;
 }
 
 const std::filesystem::path& FileBrowserState::current_dir() const {

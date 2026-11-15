@@ -284,6 +284,26 @@ TEST(FileBrowserStateTests, FiltersCueAndTocFilesAndNavigatesDirectories) {
     browser.set_show_all_files(true);
     EXPECT_EQ(browser.entries().size(), 4u);
 
+    // Move selection with clamping
+    browser.select_entry(0);
+    EXPECT_EQ(browser.selected_index(), 0u);
+    browser.move_selection(-5);
+    EXPECT_EQ(browser.selected_index(), 0u);
+    browser.move_selection(2);
+    EXPECT_EQ(browser.selected_index(), 2u);
+    EXPECT_EQ(browser.selected_file().filename(), "disc.TOC");
+    browser.move_selection(100);
+    EXPECT_EQ(browser.selected_index(), 3u);
+
+    // Substring filtering
+    browser.set_filter_query("ALB");
+    ASSERT_EQ(browser.entries().size(), 1u);
+    EXPECT_EQ(browser.entries()[0].name, "album.cue");
+    EXPECT_EQ(browser.selected_file().filename(), "album.cue");
+
+    browser.clear_filter_query();
+    EXPECT_EQ(browser.entries().size(), 4u);
+
     std::filesystem::remove_all(temp_root, ec);
 }
 

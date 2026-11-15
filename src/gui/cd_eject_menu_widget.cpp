@@ -238,7 +238,7 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
     ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }
 
-void RenderImageFileScreen(CdDisplayModel& model) {
+void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
     static FileBrowserState browser;
     static char path_buf[512] = "";
     static std::filesystem::path synced_dir;
@@ -258,57 +258,172 @@ void RenderImageFileScreen(CdDisplayModel& model) {
         }
     };
 
-    // Navigation bar: Home, Root, Up, Refresh
+    // Navigation bar: Home, Root, Up, Refresh, Show all files, and right-aligned Load Image
+    const float avail_w = ImGui::GetContentRegionAvail().x;
     const ImVec2 nav_pos = ImGui::GetCursorScreenPos();
-    if (RenderHardwareTextButton("##ImgHome", "Home", nav_pos, ImVec2(84.0f, 32.0f))) {
+    if (RenderHardwareTextButton("##ImgHome", "Home", nav_pos, ImVec2(80.0f, 32.0f))) {
         if (const char* home = std::getenv("HOME")) {
             browser.navigate_to(home);
         }
+        ImGui::SetWindowFocus("##ImageBrowserList");
     }
-    if (RenderHardwareTextButton("##ImgRoot", "Root", ImVec2(nav_pos.x + 92.0f, nav_pos.y), ImVec2(84.0f, 32.0f))) {
+    if (RenderHardwareTextButton("##ImgRoot", "Root", ImVec2(nav_pos.x + 88.0f, nav_pos.y), ImVec2(80.0f, 32.0f))) {
         browser.navigate_to("/");
+        ImGui::SetWindowFocus("##ImageBrowserList");
     }
-    if (RenderHardwareTextButton("##ImgUp", "Up ..", ImVec2(nav_pos.x + 184.0f, nav_pos.y), ImVec2(84.0f, 32.0f))) {
+    if (RenderHardwareTextButton("##ImgUp", "Up ..", ImVec2(nav_pos.x + 176.0f, nav_pos.y), ImVec2(80.0f, 32.0f))) {
         browser.navigate_up();
+        ImGui::SetWindowFocus("##ImageBrowserList");
     }
-    if (RenderHardwareTextButton("##ImgRefresh", "Refresh", ImVec2(nav_pos.x + 276.0f, nav_pos.y), ImVec2(100.0f, 32.0f))) {
+    if (RenderHardwareTextButton("##ImgRefresh", "Refresh", ImVec2(nav_pos.x + 264.0f, nav_pos.y), ImVec2(92.0f, 32.0f))) {
         browser.refresh();
+        ImGui::SetWindowFocus("##ImageBrowserList");
     }
 
-    ImGui::SetCursorScreenPos(ImVec2(nav_pos.x + 390.0f, nav_pos.y + 5.0f));
+    ImGui::SetCursorScreenPos(ImVec2(nav_pos.x + 368.0f, nav_pos.y + 5.0f));
     bool show_all = browser.show_all_files();
     if (ImGui::Checkbox("Show all files", &show_all)) {
         browser.set_show_all_files(show_all);
+        ImGui::SetWindowFocus("##ImageBrowserList");
+    }
+
+    const bool can_load = !browser.selected_file().empty();
+    constexpr float kLoadBtnW = 148.0f;
+    const ImVec2 load_pos(nav_pos.x + std::max(510.0f, avail_w - kLoadBtnW), nav_pos.y);
+    if (RenderHardwareTextButton("##BtnLoadImage", "Load Image", load_pos, ImVec2(kLoadBtnW, 32.0f), false, can_load)) {
+        try_load_selected(browser.selected_file());
     }
 
     ImGui::SetCursorScreenPos(ImVec2(nav_pos.x, nav_pos.y + 42.0f));
 
     // Path input bar
-    const float avail_w = ImGui::GetContentRegionAvail().x;
     ImGui::SetNextItemWidth(std::max(180.0f, avail_w - 86.0f));
     if (ImGui::InputText("##BrowserPath", path_buf, sizeof(path_buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
         browser.navigate_to(std::filesystem::path(path_buf));
+        ImGui::SetWindowFocus("##ImageBrowserList");
     }
     ImGui::SameLine();
     if (ImGui::Button("Go", ImVec2(72.0f, 0.0f))) {
         browser.navigate_to(std::filesystem::path(path_buf));
+        ImGui::SetWindowFocus("##ImageBrowserList");
     }
 
-    ImGui::Spacing();
+    // Active substring filter bar (shown when typing in the file browser)
+    if (!browser.filter_query().empty()) {
+        ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "Filter: \"%s\"",
+                           browser.filter_query().c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Clear")) {
+            browser.clear_filter_query();
+            ImGui::SetWindowFocus("##ImageBrowserList");
+        }
+    } else {
+        ImGui::Spacing();
+    }
 
-    // Directory & file list
-    const float list_height = std::max(140.0f, ImGui::GetContentRegionAvail().y - 96.0f);
+    // Directory & file list (slightly larger font + full keyboard navigation)
+    const float list_height = std::max(160.0f, ImGui::GetContentRegionAvail().y - 34.0f);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
-    ImGui::BeginChild("##ImageBrowserList", ImVec2(0.0f, list_height), true);
+    ImGui::BeginChild("##ImageBrowserList", ImVec2(0.0f, list_height), true,
+                      ImGuiWindowFlags_NoNavInputs);
     {
+        if (just_entered) {
+            ImGui::SetWindowFocus();
+        }
+
+        ImGuiIO& io = ImGui::GetIO();
+        bool scroll_to_selection = false;
+        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !io.WantTextInput) {
+            if (io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+                browser.navigate_up();
+                scroll_to_selection = true;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+                browser.move_selection(-1);
+                scroll_to_selection = true;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+                browser.move_selection(1);
+                scroll_to_selection = true;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
+                browser.move_selection(-10);
+                scroll_to_selection = true;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
+                browser.move_selection(10);
+                scroll_to_selection = true;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
+                if (browser.selected_index().has_value()) {
+                    if (browser.activate_entry(*browser.selected_index())) {
+                        try_load_selected(browser.selected_file());
+                    }
+                    scroll_to_selection = true;
+                }
+            } else if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
+                if (!browser.filter_query().empty()) {
+                    std::string q = browser.filter_query();
+                    q.pop_back();
+                    browser.set_filter_query(q);
+                } else {
+                    browser.navigate_up();
+                }
+                scroll_to_selection = true;
+            }
+
+            // Substring filter typing via ImGuiKey (works even when SDL text input is inactive)
+            if (!io.KeyCtrl && !io.KeyAlt && !io.KeySuper) {
+                std::string q = browser.filter_query();
+                bool added = false;
+                for (int k = ImGuiKey_A; k <= ImGuiKey_Z; ++k) {
+                    if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k))) {
+                        const char base = io.KeyShift ? 'A' : 'a';
+                        q.push_back(static_cast<char>(base + (k - ImGuiKey_A)));
+                        added = true;
+                    }
+                }
+                for (int k = ImGuiKey_0; k <= ImGuiKey_9; ++k) {
+                    if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k))) {
+                        q.push_back(static_cast<char>('0' + (k - ImGuiKey_0)));
+                        added = true;
+                    }
+                }
+                for (int k = ImGuiKey_Keypad0; k <= ImGuiKey_Keypad9; ++k) {
+                    if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k))) {
+                        q.push_back(static_cast<char>('0' + (k - ImGuiKey_Keypad0)));
+                        added = true;
+                    }
+                }
+                if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
+                    q.push_back(' ');
+                    added = true;
+                }
+                if (ImGui::IsKeyPressed(ImGuiKey_Minus)) {
+                    q.push_back(io.KeyShift ? '_' : '-');
+                    added = true;
+                }
+                if (ImGui::IsKeyPressed(ImGuiKey_Period) || ImGui::IsKeyPressed(ImGuiKey_KeypadDecimal)) {
+                    q.push_back('.');
+                    added = true;
+                }
+                if (ImGui::IsKeyPressed(ImGuiKey_Comma)) {
+                    q.push_back(',');
+                    added = true;
+                }
+                if (added) {
+                    browser.set_filter_query(q);
+                    scroll_to_selection = true;
+                }
+            }
+        }
+
+        ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.18f);
         const auto& entries = browser.entries();
         if (entries.empty()) {
-            ImGui::TextDisabled("(No matching .cue or .toc files in this directory)");
+            ImGui::TextDisabled(browser.filter_query().empty()
+                                    ? "(No matching .cue or .toc files in this directory)"
+                                    : "(No entries match current filter)");
         } else if (ImGui::BeginTable("##FileBrowserTable", 3,
                                      ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 64.0f);
+            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 68.0f);
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 96.0f);
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 104.0f);
             ImGui::TableHeadersRow();
 
             for (std::size_t i = 0; i < entries.size(); ++i) {
@@ -330,11 +445,15 @@ void RenderImageFileScreen(CdDisplayModel& model) {
                 if (ImGui::Selectable(entry.name.c_str(), is_selected,
                                       ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
                     browser.select_entry(i);
+                    ImGui::SetWindowFocus("##ImageBrowserList");
                     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                         if (browser.activate_entry(i)) {
                             try_load_selected(browser.selected_file());
                         }
                     }
+                }
+                if (is_selected && scroll_to_selection) {
+                    ImGui::SetScrollHereY(0.5f);
                 }
                 ImGui::PopID();
 
@@ -348,6 +467,7 @@ void RenderImageFileScreen(CdDisplayModel& model) {
             }
             ImGui::EndTable();
         }
+        ImGui::PopFont();
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -359,17 +479,8 @@ void RenderImageFileScreen(CdDisplayModel& model) {
         ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "Selected: %s",
                            browser.selected_file().filename().string().c_str());
     } else {
-        ImGui::TextDisabled("Select a .cue or .toc file (double-click directories to open).");
+        ImGui::TextDisabled("Arrows/PgUp/PgDn to navigate, Enter to open/load, Backspace/Alt+Up for parent, type to filter.");
     }
-    ImGui::Spacing();
-
-    const bool can_load = !browser.selected_file().empty();
-    const ImVec2 load_pos = ImGui::GetCursorScreenPos();
-    if (RenderHardwareTextButton("##BtnLoadImage", "Load Image", load_pos, ImVec2(170.0f, 38.0f), false, can_load)) {
-        try_load_selected(browser.selected_file());
-    }
-    ImGui::SetCursorScreenPos(ImVec2(load_pos.x, load_pos.y + 42.0f));
-    ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }
 
 void RenderLibraryScreen(CdDisplayModel& model) {
@@ -799,12 +910,18 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
         ImGui::Separator();
         ImGui::Spacing();
 
+        static EjectMenuScreen prev_screen = EjectMenuScreen::Cd;
+        const bool just_entered_image =
+            (model.active_eject_screen() == EjectMenuScreen::ImageFile) &&
+            (ImGui::IsWindowAppearing() || prev_screen != EjectMenuScreen::ImageFile);
+        prev_screen = model.active_eject_screen();
+
         switch (model.active_eject_screen()) {
             case EjectMenuScreen::Cd:
                 RenderCdLoadScreen(model);
                 break;
             case EjectMenuScreen::ImageFile:
-                RenderImageFileScreen(model);
+                RenderImageFileScreen(model, just_entered_image);
                 break;
             case EjectMenuScreen::Library:
                 RenderLibraryScreen(model);
