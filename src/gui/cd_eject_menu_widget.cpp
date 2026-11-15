@@ -523,52 +523,17 @@ void RenderDiskInfoScreen(CdDisplayModel& model) {
 
     const float avail_w = ImGui::GetContentRegionAvail().x;
     const float avail_h = ImGui::GetContentRegionAvail().y;
-    const float left_col_w = std::max(300.0f, avail_w * 0.44f);
+    const float left_col_w = std::max(280.0f, avail_w * 0.42f);
 
-    // Left column: Multi-inlay Cover Art Viewer + Release Info + Track List
-    ImGui::BeginChild("##DiskInfoLeft", ImVec2(left_col_w, avail_h), false);
+    // Left column: Large Multi-Inlay Cover Art Viewer + Album/Release Summary
+    ImGui::BeginChild("##DiskInfoLeft", ImVec2(left_col_w, avail_h), false,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
         const auto& slots = info_state.inlay_slots();
         const std::size_t inlay_idx = info_state.active_inlay_index();
         const InlayImageSlot& active_slot = slots[inlay_idx];
 
-        // Cover / Inlay Artwork Card
-        const float art_w = std::min(left_col_w - 8.0f, 260.0f);
-        const float art_h = 165.0f;
-        const ImVec2 art_min = ImGui::GetCursorScreenPos();
-        const ImVec2 art_max(art_min.x + art_w, art_min.y + art_h);
-        ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-        draw_list->AddRectFilled(art_min, art_max, IM_COL32(16, 18, 22, 255), 4.0f);
-        draw_list->AddRect(art_min, art_max, IM_COL32(0, 180, 220, 140), 4.0f, 0, 1.5f);
-
-        // Stylized CD jewel-case disc graphic inside the inlay frame
-        const ImVec2 disc_center(art_min.x + art_w * 0.5f, art_min.y + art_h * 0.48f);
-        draw_list->AddCircle(disc_center, 48.0f, IM_COL32(0, 210, 240, 140), 36, 1.5f);
-        draw_list->AddCircle(disc_center, 15.0f, IM_COL32(0, 210, 240, 110), 24, 1.2f);
-        draw_list->AddCircleFilled(disc_center, 7.0f, IM_COL32(12, 14, 18, 255));
-
-        char slot_badge[64];
-        std::snprintf(slot_badge, sizeof(slot_badge), "%zu / %zu: %s",
-                      inlay_idx + 1, slots.size(), active_slot.label.c_str());
-        draw_list->AddText(ImVec2(art_min.x + 10.0f, art_min.y + 8.0f), kColCyanBright, slot_badge);
-        draw_list->AddText(ImVec2(art_min.x + 10.0f, art_max.y - 22.0f),
-                           IM_COL32(170, 180, 195, 220), active_slot.subtitle.c_str());
-
-        ImGui::Dummy(ImVec2(art_w, art_h + 6.0f));
-
-        // Prev / Next inlay switcher buttons
-        const ImVec2 nav_pos = ImGui::GetCursorScreenPos();
-        if (RenderHardwareTextButton("##InlayPrev", "< Prev", nav_pos, ImVec2(96.0f, 30.0f))) {
-            info_state.prev_inlay();
-        }
-        if (RenderHardwareTextButton("##InlayNext", "Next >",
-                                     ImVec2(nav_pos.x + 106.0f, nav_pos.y), ImVec2(96.0f, 30.0f))) {
-            info_state.next_inlay();
-        }
-        ImGui::SetCursorScreenPos(ImVec2(nav_pos.x, nav_pos.y + 38.0f));
-
-        // Release metadata & Track list
+        // Album title & release year header
         ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s", model.album_title().c_str());
         const auto release_year = info_state.release_year_for_album(model.artist_name(), model.album_title());
         if (release_year.has_value()) {
@@ -578,52 +543,123 @@ void RenderDiskInfoScreen(CdDisplayModel& model) {
         }
         ImGui::Spacing();
 
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
-        ImGui::BeginChild("##DiskInfoTracks", ImVec2(0.0f, 0.0f), true);
-        {
-            const auto& tracks = model.tracks();
-            for (const auto& trk : tracks) {
-                const std::string dur = FormatDurationMmSs(trk.duration_seconds);
-                const std::string title = trk.title.empty()
-                    ? ("Track " + std::to_string(trk.number))
-                    : trk.title;
-                ImGui::Text("%02d. %s  (%s)", trk.number, title.c_str(), dur.c_str());
-            }
+        // Large Cover / Inlay Artwork Card filling most of the left column without overflowing
+        const float remaining_h = ImGui::GetContentRegionAvail().y;
+        const float controls_reserve_h = 64.0f;
+        const float art_w = std::max(180.0f, left_col_w - 8.0f);
+        const float art_h = std::max(140.0f, remaining_h - controls_reserve_h);
+        const ImVec2 art_min = ImGui::GetCursorScreenPos();
+        const ImVec2 art_max(art_min.x + art_w, art_min.y + art_h);
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+        draw_list->AddRectFilled(art_min, art_max, IM_COL32(16, 18, 22, 255), 4.0f);
+        draw_list->AddRect(art_min, art_max, IM_COL32(0, 180, 220, 140), 4.0f, 0, 1.5f);
+
+        // Stylized CD jewel-case disc graphic scaled to the cover frame
+        const float disc_radius = std::max(36.0f, std::min(art_w, art_h) * 0.34f);
+        const ImVec2 disc_center(art_min.x + art_w * 0.5f, art_min.y + art_h * 0.5f);
+        draw_list->AddCircle(disc_center, disc_radius, IM_COL32(0, 210, 240, 140), 48, 1.8f);
+        draw_list->AddCircle(disc_center, disc_radius * 0.68f, IM_COL32(0, 160, 195, 70), 40, 1.0f);
+        draw_list->AddCircle(disc_center, disc_radius * 0.30f, IM_COL32(0, 210, 240, 120), 28, 1.3f);
+        draw_list->AddCircleFilled(disc_center, disc_radius * 0.14f, IM_COL32(12, 14, 18, 255));
+
+        char slot_badge[64];
+        std::snprintf(slot_badge, sizeof(slot_badge), "%zu / %zu: %s",
+                      inlay_idx + 1, slots.size(), active_slot.label.c_str());
+        draw_list->AddText(ImVec2(art_min.x + 12.0f, art_min.y + 10.0f), kColCyanBright, slot_badge);
+        draw_list->AddText(ImVec2(art_min.x + 12.0f, art_max.y - 24.0f),
+                           IM_COL32(170, 180, 195, 220), active_slot.subtitle.c_str());
+
+        ImGui::Dummy(ImVec2(art_w, art_h + 6.0f));
+
+        // Prev / Next inlay switcher buttons centered under cover
+        const ImVec2 nav_pos = ImGui::GetCursorScreenPos();
+        if (RenderHardwareTextButton("##InlayPrev", "< Prev", nav_pos, ImVec2(104.0f, 34.0f))) {
+            info_state.prev_inlay();
         }
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
+        if (RenderHardwareTextButton("##InlayNext", "Next >",
+                                     ImVec2(nav_pos.x + 114.0f, nav_pos.y), ImVec2(104.0f, 34.0f))) {
+            info_state.next_inlay();
+        }
+        ImGui::SetCursorScreenPos(ImVec2(nav_pos.x, nav_pos.y + 38.0f));
+        ImGui::Dummy(ImVec2(1.0f, 1.0f));
     }
     ImGui::EndChild();
 
-    ImGui::SameLine(0.0f, 14.0f);
+    ImGui::SameLine(0.0f, 16.0f);
 
-    // Right column: Band & Album editorial sources (Wikipedia, Music Magazines, Liner Notes)
+    // Right column: Two tabs ("Album info" and "Tracks info")
     ImGui::BeginChild("##DiskInfoRight", ImVec2(0.0f, avail_h), false);
     {
-        const auto sources = info_state.editorial_sources_for_album(model.artist_name(), model.album_title());
         const ImVec2 tab_pos = ImGui::GetCursorScreenPos();
-        float tab_x = tab_pos.x;
-        for (std::size_t i = 0; i < sources.size(); ++i) {
-            char btn_id[32];
-            std::snprintf(btn_id, sizeof(btn_id), "##InfoSrc%zu", i);
-            const bool is_active = (info_state.active_source_index() == i);
-            if (RenderHardwareTextButton(btn_id, sources[i].sourceName.c_str(),
-                                         ImVec2(tab_x, tab_pos.y), ImVec2(148.0f, 34.0f), is_active)) {
-                info_state.set_active_source_index(i);
-            }
-            tab_x += 156.0f;
-        }
-        ImGui::SetCursorScreenPos(ImVec2(tab_pos.x, tab_pos.y + 44.0f));
+        const std::size_t active_tab = info_state.active_source_index() % 2;
 
-        const std::size_t active_idx = std::min(info_state.active_source_index(), sources.size() - 1);
+        if (RenderHardwareTextButton("##InfoTabAlbum", "Album info",
+                                     tab_pos, ImVec2(160.0f, 36.0f), active_tab == 0)) {
+            info_state.set_active_source_index(0);
+        }
+        if (RenderHardwareTextButton("##InfoTabTracks", "Tracks info",
+                                     ImVec2(tab_pos.x + 170.0f, tab_pos.y), ImVec2(160.0f, 36.0f), active_tab == 1)) {
+            info_state.set_active_source_index(1);
+        }
+        ImGui::SetCursorScreenPos(ImVec2(tab_pos.x, tab_pos.y + 46.0f));
+
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
-        ImGui::BeginChild("##DiskInfoNotes", ImVec2(0.0f, 0.0f), true);
+        ImGui::BeginChild("##DiskInfoTabContent", ImVec2(0.0f, 0.0f), true);
         {
-            ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s",
-                               sources[active_idx].sourceName.c_str());
-            ImGui::Separator();
-            ImGui::Spacing();
-            ImGui::TextWrapped("%s", sources[active_idx].text.c_str());
+            if (active_tab == 0) {
+                // Aggregated Album Info (Wikipedia, Music Magazines, Liner Notes)
+                const auto sources = info_state.editorial_sources_for_album(
+                    model.artist_name(), model.album_title());
+                for (std::size_t i = 0; i < sources.size(); ++i) {
+                    if (i > 0) {
+                        ImGui::Spacing();
+                        ImGui::Separator();
+                        ImGui::Spacing();
+                    }
+                    ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s",
+                                       sources[i].sourceName.c_str());
+                    ImGui::Spacing();
+                    ImGui::TextWrapped("%s", sources[i].text.c_str());
+                }
+            } else {
+                // Tracks Info tab
+                const auto& tracks = model.tracks();
+                int total_seconds = 0;
+                for (const auto& trk : tracks) {
+                    total_seconds += std::max(0, trk.duration_seconds);
+                }
+                const std::string total_dur = FormatDurationMmSs(total_seconds);
+                ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f),
+                                   "Tracklist (%zu tracks, Total %s)", tracks.size(), total_dur.c_str());
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                if (ImGui::BeginTable("##DiskInfoTrackTable", 3,
+                                      ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
+                    ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 36.0f);
+                    ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Duration", ImGuiTableColumnFlags_WidthFixed, 72.0f);
+                    ImGui::TableHeadersRow();
+
+                    for (const auto& trk : tracks) {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Text("%02d", trk.number);
+
+                        ImGui::TableSetColumnIndex(1);
+                        const std::string title = trk.title.empty()
+                            ? ("Track " + std::to_string(trk.number))
+                            : trk.title;
+                        ImGui::TextUnformatted(title.c_str());
+
+                        ImGui::TableSetColumnIndex(2);
+                        const std::string dur = FormatDurationMmSs(trk.duration_seconds);
+                        ImGui::TextUnformatted(dur.c_str());
+                    }
+                    ImGui::EndTable();
+                }
+            }
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();
