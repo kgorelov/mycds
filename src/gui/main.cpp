@@ -214,10 +214,12 @@ int main(int argc, char* argv[]) {
             running = false;
         }
         if (display_model.is_eject_menu_open()) {
+            io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
             if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                 display_model.close_eject_menu();
             }
         } else if (!io.WantTextInput) {
+            io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
             if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
                 display_model.toggle_play_pause();
             }
@@ -238,11 +240,21 @@ int main(int argc, char* argv[]) {
             if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
                 display_model.seek_forward(10.0 * seek_dt);
             }
-            if (ImGui::IsKeyDown(ImGuiKey_UpArrow)) {
-                display_model.set_volume(display_model.volume() + 0.35 * seek_dt);
-            }
-            if (ImGui::IsKeyDown(ImGuiKey_DownArrow)) {
-                display_model.set_volume(display_model.volume() - 0.35 * seek_dt);
+            const bool vol_up = ImGui::IsKeyDown(ImGuiKey_UpArrow);
+            const bool vol_down = ImGui::IsKeyDown(ImGuiKey_DownArrow);
+            static double vol_hold_seconds = 0.0;
+            if (vol_up != vol_down) {
+                const bool initial_press =
+                    (vol_up && ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)) ||
+                    (vol_down && ImGui::IsKeyPressed(ImGuiKey_DownArrow, false));
+                vol_hold_seconds += seek_dt;
+                const double accel = std::min(1.0, vol_hold_seconds / 0.9);
+                const double rate = 0.15 + 1.35 * accel * accel;
+                const double step = initial_press ? std::max(0.01, rate * seek_dt) : (rate * seek_dt);
+                const double dir = vol_up ? 1.0 : -1.0;
+                display_model.set_volume(display_model.volume() + dir * step);
+            } else {
+                vol_hold_seconds = 0.0;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_S)) {
                 display_model.toggle_shuffle();
@@ -303,7 +315,7 @@ int main(int argc, char* argv[]) {
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->WorkSize);
-        constexpr ImGuiWindowFlags host_window_flags =
+        ImGuiWindowFlags host_window_flags =
             ImGuiWindowFlags_NoDecoration |
             ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoResize |
@@ -311,6 +323,9 @@ int main(int argc, char* argv[]) {
             ImGuiWindowFlags_NoBringToFrontOnFocus |
             ImGuiWindowFlags_NoScrollWithMouse |
             ImGuiWindowFlags_NoScrollbar;
+        if (!display_model.is_eject_menu_open()) {
+            host_window_flags |= ImGuiWindowFlags_NoNavInputs;
+        }
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 20.0f));
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
