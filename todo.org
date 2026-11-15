@@ -1,0 +1,87 @@
+* Prototype
+
+* TUI
+
+Info to display:
+
+* TODO GUI
+** DONE perf optimizations
+** DONE Fix triangle arrows.
+Only the back FF button is good. Make other buttons look the same.
+** DONE Turn off bypass compositor
+SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR=0 by default
+** DONE Dsplay artist and album name
+Let's use the space taken by the track list caption
+When we have CDDB data, istead of "COMPACT DISC DIGITAL AUDIO" and "TRACK PLAYLIST" we should display the artist and album names instead.
+Both must be displayed in a bright font.
+** DONE Library functionality
+Tabs, screens, real CD and image file dialog
+
+** DONE Fix the repeat button icon
+It is filled inside. I guess it was supposed to be two arrows making a joint figure. There must be a glitch in rendering.
+
+** DONE ESC in the main view must invoke the Eject menu
+
+** DONE Up/Down volume more aggressive (with accel)
+and must not scroll the whole window!
+
+** DONE Support proper resizing
+  - The main cd screen and buttons - fixed sized clinging to the left egde of the window.
+  - Dynamic playlist size: spanning to the bottom of the window and to the right
+  - CD cover widget will appear on the left size under the buttons in its own block if there's enough space.
+
+** TODO Proper minimum width and hight for widgets
+
+Minimum window width and hight: mandatory widgets: cd display, level meter, buttons.
+Optional widgets: CD cover, playlist.
+
+Several layouts:
+  - minimal: cd screen + level meters + buttons, no playlist, no cd cover
+  - vertical: playlist under the CD screens, meters and buttons. (no cd cover)
+  - horizontal: playlist to the right of cd screen and buttons (default)
+  - maximal: like horizontal + cd cover under the cd screen, meters and buttons
+
+** TODO Playlist buttons
+  - Add to playlist
+  - Lyrics
+  - Remove from playlist
+
+
+** TODO Persistent state
+In ~/.config/mycds/state.json
+
+  - Window position
+  - Window size
+  - Last open CD (device/image)
+  - Last track / position
+  - Last active "Eject" menu screen
+  - Last visited directory (File/Image)
+
+** TODO About screen
+  - Short project
+  - A link to github
+  - Author / email
+
+
+* First fully working graphical CD player
+One command line argument
+
+* CDDB cache
+A persistent local CDDB cache
+
+* Music Braiz support
+https://musicbrainz.org/doc/MusicBrainz_Database/Download
+
+* FreeDB dump
+https://archive.org/download/freedb
+https://archive.org/download/freedb/freedb-complete-20191203.tar.bz2
+
+* Local collection
+Same structure as remote.
+
+* CD Rip
+
+* S3 collection
+
+* Flac support
+CUE/TOC + FLAC[s]
