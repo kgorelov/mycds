@@ -125,6 +125,24 @@ void DrawDiffusedRect(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2
     draw_list->AddRectFilled(min_pos, max_pos, core_col, rounding);
 }
 
+void DrawDiffusedRectOutline(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, float rounding,
+                             ImU32 core_col, float core_thickness, bool is_bright) {
+    if (!draw_list) {
+        return;
+    }
+
+    draw_list->AddRect(ImVec2(min_pos.x + 1.0f, min_pos.y + 1.2f),
+                       ImVec2(max_pos.x + 1.0f, max_pos.y + 1.2f),
+                       IM_COL32(10, 14, 20, 80), rounding, 0, core_thickness);
+
+    const ImU32 bloom_outer = is_bright ? IM_COL32(0, 220, 255, 35) : IM_COL32(0, 180, 220, 20);
+    const ImU32 bloom_mid = is_bright ? IM_COL32(0, 230, 255, 75) : IM_COL32(0, 190, 230, 45);
+
+    draw_list->AddRect(min_pos, max_pos, bloom_outer, rounding, 0, core_thickness + 3.6f);
+    draw_list->AddRect(min_pos, max_pos, bloom_mid, rounding, 0, core_thickness + 1.6f);
+    draw_list->AddRect(min_pos, max_pos, core_col, rounding, 0, core_thickness);
+}
+
 void DrawDiffusedLine(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2,
                       ImU32 core_col, float core_thickness, bool is_bright) {
     if (!draw_list) {

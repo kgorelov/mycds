@@ -42,9 +42,13 @@ void DrawChassisScrew(ImDrawList* draw_list, const ImVec2& pos);
 void DrawDiffusedTriangle(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2, const ImVec2& p3,
                           ImU32 core_col, bool is_bright);
 
-/// Softly diffused cyan-backlit rectangle primitive.
+/// Softly diffused cyan-backlit rectangle primitive (filled).
 void DrawDiffusedRect(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, float rounding,
                       ImU32 core_col, bool is_bright);
+
+/// Softly diffused cyan-backlit hollow rectangle outline primitive.
+void DrawDiffusedRectOutline(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, float rounding,
+                             ImU32 core_col, float core_thickness, bool is_bright);
 
 /// Softly diffused cyan-backlit line primitive.
 void DrawDiffusedLine(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2,

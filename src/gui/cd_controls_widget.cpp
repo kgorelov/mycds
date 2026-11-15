@@ -249,7 +249,7 @@ void DrawRepeatPictogram(ImDrawList* draw_list, const ImVec2& center, RepeatMode
     const ImVec2 loop_min(center.x - 20.0f, center.y - 6.0f);
     const ImVec2 loop_max(center.x + 4.0f, center.y + 6.0f);
 
-    DrawDiffusedRect(draw_list, loop_min, loop_max, 2.5f, core_col, is_active);
+    DrawDiffusedRectOutline(draw_list, loop_min, loop_max, 2.5f, core_col, 1.8f, is_active);
 
     // Top arrow head pointing right
     DrawDiffusedTriangle(draw_list, ImVec2(loop_max.x - 4.5f, loop_min.y - 3.5f),
