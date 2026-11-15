@@ -18,6 +18,9 @@
 
 int main(int argc, char* argv[]) {
 
+    // Disable X11 compositor bypass by default (improves desktop integration on KDE KWin and X11 compositors)
+    SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
+
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::cerr << "Failed to initialize SDL: " << SDL_GetError() << '\n';
         return 1;
