@@ -115,10 +115,21 @@ void DrawHardwareButtonSocket(ImDrawList* draw_list, const ImVec2& socket_min, c
 
 void DrawDiffusedTriangle(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2, const ImVec2& p3,
                           ImU32 core_col, bool is_bright) {
+    if (!draw_list) {
+        return;
+    }
+
+    // Ensure strictly clockwise winding for ImDrawFlags_StrokeInside.
+    // In screen coordinates (Y downwards), clockwise triangle has cross product (p2-p1) x (p3-p2) > 0.
+    const float cross = (p2.x - p1.x) * (p3.y - p2.y) - (p2.y - p1.y) * (p3.x - p2.x);
+    const ImVec2 a = p1;
+    const ImVec2 b = (cross < 0.0f) ? p3 : p2;
+    const ImVec2 c = (cross < 0.0f) ? p2 : p3;
+
     // Subtle soft stencil drop shadow
-    draw_list->AddTriangleFilled(ImVec2(p1.x + 1.0f, p1.y + 1.2f),
-                                 ImVec2(p2.x + 1.0f, p2.y + 1.2f),
-                                 ImVec2(p3.x + 1.0f, p3.y + 1.2f),
+    draw_list->AddTriangleFilled(ImVec2(a.x + 1.0f, a.y + 1.2f),
+                                 ImVec2(b.x + 1.0f, b.y + 1.2f),
+                                 ImVec2(c.x + 1.0f, c.y + 1.2f),
                                  IM_COL32(10, 14, 20, 80));
 
     // Multi-tier diffuse bloom halos (soft gradual falloff)
@@ -126,12 +137,12 @@ void DrawDiffusedTriangle(ImDrawList* draw_list, const ImVec2& p1, const ImVec2&
     const ImU32 bloom_mid   = is_bright ? IM_COL32(0, 230, 255, 75) : IM_COL32(0, 190, 230, 45);
     const ImU32 bloom_inner = is_bright ? IM_COL32(60, 240, 255, 140) : IM_COL32(20, 195, 230, 80);
 
-    draw_list->AddTriangle(p1, p2, p3, bloom_outer, 5.0f);
-    draw_list->AddTriangle(p1, p2, p3, bloom_mid, 2.8f);
-    draw_list->AddTriangle(p1, p2, p3, bloom_inner, 1.3f);
+    draw_list->AddTriangle(a, b, c, bloom_outer, 3.5f);
+    draw_list->AddTriangle(a, b, c, bloom_mid, 2.0f);
+    draw_list->AddTriangle(a, b, c, bloom_inner, 1.0f);
 
     // Blended translucent core fill
-    draw_list->AddTriangleFilled(p1, p2, p3, core_col);
+    draw_list->AddTriangleFilled(a, b, c, core_col);
 }
 
 void DrawDiffusedRect(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, float rounding,
@@ -177,18 +188,18 @@ void DrawPlayPausePictogram(ImDrawList* draw_list, const ImVec2& center, bool is
     const ImU32 play_core = play_bright ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
     const ImU32 pause_core = pause_bright ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
 
-    // Exact symmetric coordinates around center (Total X span: [-17, +17], Total Y span: [-11, +11])
-    // Play triangle on left: from center.x - 17.0f to center.x - 3.0f
-    const ImVec2 p1(center.x - 17.0f, center.y - 11.0f);
-    const ImVec2 p2(center.x - 17.0f, center.y + 11.0f);
-    const ImVec2 p3(center.x - 3.0f, center.y);
+    // Symmetric coordinates around center matching rewind chevron geometry (width: 9.5f, height: 20.0f)
+    // Play triangle on left: from center.x - 14.5f to center.x - 5.0f (width 9.5f, height [-10.0, +10.0])
+    const ImVec2 p1(center.x - 14.5f, center.y - 10.0f);
+    const ImVec2 p2(center.x - 5.0f, center.y);
+    const ImVec2 p3(center.x - 14.5f, center.y + 10.0f);
     DrawDiffusedTriangle(draw_list, p1, p2, p3, play_core, play_bright);
 
-    // Pause bars on right: from center.x + 3.0f to center.x + 17.0f
-    const ImVec2 b1_min(center.x + 3.0f, center.y - 11.0f);
-    const ImVec2 b1_max(center.x + 7.5f, center.y + 11.0f);
-    const ImVec2 b2_min(center.x + 12.5f, center.y - 11.0f);
-    const ImVec2 b2_max(center.x + 17.0f, center.y + 11.0f);
+    // Pause bars on right: from center.x + 2.5f to center.x + 14.5f (height [-10.0, +10.0])
+    const ImVec2 b1_min(center.x + 2.5f, center.y - 10.0f);
+    const ImVec2 b1_max(center.x + 6.5f, center.y + 10.0f);
+    const ImVec2 b2_min(center.x + 10.5f, center.y - 10.0f);
+    const ImVec2 b2_max(center.x + 14.5f, center.y + 10.0f);
 
     DrawDiffusedRect(draw_list, b1_min, b1_max, 1.2f, pause_core, pause_bright);
     DrawDiffusedRect(draw_list, b2_min, b2_max, 1.2f, pause_core, pause_bright);
@@ -233,21 +244,21 @@ void DrawPrevPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_seek
     const ImU32 col_bar = ModulateCol(base_col, wave_bar);
 
     // Centered double chevron with end bar:
-    // Left end bar: [-14.5, -12.0]
-    const ImVec2 bar_min(center.x - 14.5f, center.y - 10.0f);
-    const ImVec2 bar_max(center.x - 12.0f, center.y + 10.0f);
+    // Left end bar: [-14.0, -11.5]
+    const ImVec2 bar_min(center.x - 14.0f, center.y - 10.0f);
+    const ImVec2 bar_max(center.x - 11.5f, center.y + 10.0f);
     DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, col_bar, is_active && wave_bar > 0.8f);
 
-    // Left chevron (p): tip at -10.0, base at 0.0
-    const ImVec2 p1(center.x - 0.5f, center.y - 10.0f);
-    const ImVec2 p2(center.x - 0.5f, center.y + 10.0f);
-    const ImVec2 p3(center.x - 10.0f, center.y);
+    // Left chevron (p): tip at -9.5, base at 0.0
+    const ImVec2 p1(center.x, center.y - 10.0f);
+    const ImVec2 p2(center.x, center.y + 10.0f);
+    const ImVec2 p3(center.x - 9.5f, center.y);
     DrawDiffusedTriangle(draw_list, p1, p2, p3, col_p, is_active && wave_p > 0.8f);
 
-    // Right chevron (q): tip at +4.0, base at +14.5
-    const ImVec2 q1(center.x + 14.5f, center.y - 10.0f);
-    const ImVec2 q2(center.x + 14.5f, center.y + 10.0f);
-    const ImVec2 q3(center.x + 4.0f, center.y);
+    // Right chevron (q): tip at +4.5, base at +14.0
+    const ImVec2 q1(center.x + 14.0f, center.y - 10.0f);
+    const ImVec2 q2(center.x + 14.0f, center.y + 10.0f);
+    const ImVec2 q3(center.x + 4.5f, center.y);
     DrawDiffusedTriangle(draw_list, q1, q2, q3, col_q, is_active && wave_q > 0.8f);
 }
 
@@ -278,22 +289,22 @@ void DrawNextPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_seek
     const ImU32 col_q = ModulateCol(base_col, wave_q);
     const ImU32 col_bar = ModulateCol(base_col, wave_bar);
 
-    // Exact symmetric mirror of Prev:
-    // Left chevron (p): base at -14.5, tip at -4.0
-    const ImVec2 p1(center.x - 14.5f, center.y - 10.0f);
-    const ImVec2 p2(center.x - 14.5f, center.y + 10.0f);
-    const ImVec2 p3(center.x - 4.0f, center.y);
+    // Exact symmetric mirror of Prev chevrons (matching width: 9.5f, height: 20.0f):
+    // Left chevron (p): base at -14.0, tip at -4.5
+    const ImVec2 p1(center.x - 14.0f, center.y - 10.0f);
+    const ImVec2 p2(center.x - 4.5f, center.y);
+    const ImVec2 p3(center.x - 14.0f, center.y + 10.0f);
     DrawDiffusedTriangle(draw_list, p1, p2, p3, col_p, is_active && wave_p > 0.8f);
 
-    // Right chevron (q): base at +0.5, tip at +10.0
-    const ImVec2 q1(center.x + 0.5f, center.y - 10.0f);
-    const ImVec2 q2(center.x + 0.5f, center.y + 10.0f);
-    const ImVec2 q3(center.x + 10.0f, center.y);
+    // Right chevron (q): base at 0.0, tip at +9.5
+    const ImVec2 q1(center.x, center.y - 10.0f);
+    const ImVec2 q2(center.x + 9.5f, center.y);
+    const ImVec2 q3(center.x, center.y + 10.0f);
     DrawDiffusedTriangle(draw_list, q1, q2, q3, col_q, is_active && wave_q > 0.8f);
 
-    // Right end bar: [+12.0, +14.5]
-    const ImVec2 bar_min(center.x + 12.0f, center.y - 10.0f);
-    const ImVec2 bar_max(center.x + 14.5f, center.y + 10.0f);
+    // Right end bar: [+11.5, +14.0]
+    const ImVec2 bar_min(center.x + 11.5f, center.y - 10.0f);
+    const ImVec2 bar_max(center.x + 14.0f, center.y + 10.0f);
     DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, col_bar, is_active && wave_bar > 0.8f);
 }
 
@@ -301,15 +312,16 @@ void DrawEjectPictogram(ImDrawList* draw_list, const ImVec2& center, bool hovere
     const bool is_bright = pressed || hovered;
     const ImU32 core_col = pressed ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
 
-    // Centered upward triangle: [-11.0, +11.0], height 11.5
-    const ImVec2 t1(center.x - 11.0f, center.y + 1.0f);
-    const ImVec2 t2(center.x + 11.0f, center.y + 1.0f);
-    const ImVec2 t3(center.x, center.y - 10.5f);
+    // Upward chevron triangle matching rewind chevron geometry (base width 20.0f, height 10.0f)
+    // Tip at center.x, center.y - 8.0f; Base at center.y + 2.0f; Left/Right at center.x +- 10.0f
+    const ImVec2 t1(center.x, center.y - 8.0f);
+    const ImVec2 t2(center.x + 10.0f, center.y + 2.0f);
+    const ImVec2 t3(center.x - 10.0f, center.y + 2.0f);
     DrawDiffusedTriangle(draw_list, t1, t2, t3, core_col, is_bright);
 
-    // Centered horizontal tray bar: [-11.0, +11.0]
-    const ImVec2 bar_min(center.x - 11.0f, center.y + 5.5f);
-    const ImVec2 bar_max(center.x + 11.0f, center.y + 9.5f);
+    // Centered horizontal tray bar matching the 20.0f base width: [-10.0f, +10.0f]
+    const ImVec2 bar_min(center.x - 10.0f, center.y + 5.5f);
+    const ImVec2 bar_max(center.x + 10.0f, center.y + 8.5f);
     DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, core_col, is_bright);
 }
 
@@ -366,8 +378,8 @@ void DrawShufflePictogram(ImDrawList* draw_list, const ImVec2& center, bool is_a
     DrawDiffusedLine(draw_list, ImVec2(x_mid2, y1), ImVec2(x_end, y1), core_col, 1.8f, is_bright);
 
     // Arrow heads
-    DrawDiffusedTriangle(draw_list, ImVec2(x_end, y1 - 3.5f), ImVec2(x_end, y1 + 3.5f), ImVec2(x_end + 4.5f, y1), core_col, is_bright);
-    DrawDiffusedTriangle(draw_list, ImVec2(x_end, y2 - 3.5f), ImVec2(x_end, y2 + 3.5f), ImVec2(x_end + 4.5f, y2), core_col, is_bright);
+    DrawDiffusedTriangle(draw_list, ImVec2(x_end, y1 - 3.5f), ImVec2(x_end + 4.5f, y1), ImVec2(x_end, y1 + 3.5f), core_col, is_bright);
+    DrawDiffusedTriangle(draw_list, ImVec2(x_end, y2 - 3.5f), ImVec2(x_end + 4.5f, y2), ImVec2(x_end, y2 + 3.5f), core_col, is_bright);
 
     // Active status mini-LED indicator dot on right side
     const ImVec2 led_center(center.x + 20.0f, center.y);
@@ -392,13 +404,13 @@ void DrawRepeatPictogram(ImDrawList* draw_list, const ImVec2& center, RepeatMode
 
     // Top arrow head pointing right
     DrawDiffusedTriangle(draw_list, ImVec2(loop_max.x - 4.5f, loop_min.y - 3.5f),
-                         ImVec2(loop_max.x - 4.5f, loop_min.y + 3.5f),
-                         ImVec2(loop_max.x + 1.0f, loop_min.y), core_col, is_active);
+                         ImVec2(loop_max.x + 1.0f, loop_min.y),
+                         ImVec2(loop_max.x - 4.5f, loop_min.y + 3.5f), core_col, is_active);
 
     // Bottom arrow head pointing left
-    DrawDiffusedTriangle(draw_list, ImVec2(loop_min.x + 4.5f, loop_max.y - 3.5f),
-                         ImVec2(loop_min.x + 4.5f, loop_max.y + 3.5f),
-                         ImVec2(loop_min.x - 1.0f, loop_max.y), core_col, is_active);
+    DrawDiffusedTriangle(draw_list, ImVec2(loop_min.x + 4.5f, loop_max.y + 3.5f),
+                         ImVec2(loop_min.x - 1.0f, loop_max.y),
+                         ImVec2(loop_min.x + 4.5f, loop_max.y - 3.5f), core_col, is_active);
 
     // Mode status text: "1" or "A" on right side
     const ImVec2 text_pos(center.x + 10.5f, center.y - 7.0f);
