@@ -38,6 +38,11 @@ struct VolumeLevels {
     double right_peak{0.0};
 };
 
+struct AppSettings {
+    bool play_when_started{true};
+    bool auto_play_on_disc_load{true};
+};
+
 class CdDisplayModel {
 public:
     CdDisplayModel();
@@ -76,6 +81,11 @@ public:
 
     void set_active_eject_screen(EjectMenuScreen screen);
     [[nodiscard]] EjectMenuScreen active_eject_screen() const;
+
+    void set_app_settings(const AppSettings& settings);
+    [[nodiscard]] const AppSettings& app_settings() const;
+    void set_play_when_started(bool enabled);
+    void set_auto_play_on_disc_load(bool enabled);
 
     void load_disc(const std::string& album_title, const std::vector<TrackInfo>& tracks);
     void load_disc(const std::string& artist_name, const std::string& album_title, const std::vector<TrackInfo>& tracks);
@@ -133,6 +143,7 @@ private:
     double balance_{0.0};
     bool eject_menu_open_{false};
     EjectMenuScreen active_eject_screen_{EjectMenuScreen::Cd};
+    AppSettings app_settings_{};
     VolumeLevels volume_levels_{};
     double left_peak_timer_{0.0};
     double right_peak_timer_{0.0};

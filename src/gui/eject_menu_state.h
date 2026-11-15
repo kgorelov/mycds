@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "cd_display_model.h"
+
 namespace mycds::gui {
 
 struct FileBrowserEntry {
@@ -50,5 +52,105 @@ private:
     bool show_all_files_{false};
     std::string error_message_{};
 };
+
+// -----------------------------------------------------------------------------
+// Library Mock Catalog State
+// -----------------------------------------------------------------------------
+
+struct LibraryEntry {
+    std::string artist{};
+    std::string album{};
+    int year{0};
+    std::string genre{};
+    std::string addedDate{}; // ISO YYYY-MM-DD
+    std::vector<TrackInfo> tracks{};
+};
+
+enum class LibrarySortMode {
+    Relevance,
+    YearNewest,
+    YearOldest,
+    RecentlyAdded
+};
+
+/// Search, filter, and sort state for the mock CD Library screen.
+class LibraryCatalogState {
+public:
+    LibraryCatalogState();
+    explicit LibraryCatalogState(std::vector<LibraryEntry> entries);
+
+    void set_search_query(const std::string& query);
+    [[nodiscard]] const std::string& search_query() const;
+
+    void set_genre_filter(const std::string& genre);
+    [[nodiscard]] const std::string& genre_filter() const;
+
+    void set_year_filter(int year);
+    [[nodiscard]] int year_filter() const;
+
+    void set_sort_mode(LibrarySortMode mode);
+    [[nodiscard]] LibrarySortMode sort_mode() const;
+
+    [[nodiscard]] std::vector<std::string> available_genres() const;
+    [[nodiscard]] std::vector<int> available_years() const;
+    [[nodiscard]] std::vector<const LibraryEntry*> filtered_entries() const;
+
+    void set_selected_index(std::size_t index);
+    [[nodiscard]] std::size_t selected_index() const;
+
+private:
+    std::vector<LibraryEntry> entries_{};
+    std::string search_query_{};
+    std::string genre_filter_{};
+    int year_filter_{0};
+    LibrarySortMode sort_mode_{LibrarySortMode::Relevance};
+    std::size_t selected_index_{0};
+};
+
+// -----------------------------------------------------------------------------
+// Disk Info & Inlay Gallery State
+// -----------------------------------------------------------------------------
+
+struct InlayImageSlot {
+    std::string label{};
+    std::string subtitle{};
+};
+
+struct EditorialSource {
+    std::string sourceName{};
+    std::string text{};
+};
+
+/// Holds cover/inlay slot selection and editorial source tabs for Disk Info.
+class DiskInfoState {
+public:
+    DiskInfoState();
+
+    void next_inlay();
+    void prev_inlay();
+    [[nodiscard]] std::size_t active_inlay_index() const;
+    [[nodiscard]] const std::vector<InlayImageSlot>& inlay_slots() const;
+
+    void set_active_source_index(std::size_t index);
+    [[nodiscard]] std::size_t active_source_index() const;
+
+    [[nodiscard]] std::optional<int> release_year_for_album(const std::string& artist,
+                                                              const std::string& album) const;
+    [[nodiscard]] std::vector<EditorialSource> editorial_sources_for_album(const std::string& artist,
+                                                                           const std::string& album) const;
+
+private:
+    std::vector<InlayImageSlot> inlay_slots_{};
+    std::size_t active_inlay_index_{0};
+    std::size_t active_source_index_{0};
+};
+
+// -----------------------------------------------------------------------------
+// Settings Persistence
+// -----------------------------------------------------------------------------
+
+std::filesystem::path default_settings_path();
+AppSettings load_app_settings(const std::filesystem::path& path);
+bool save_app_settings(const std::filesystem::path& path, const AppSettings& settings);
 
 } // namespace mycds::gui

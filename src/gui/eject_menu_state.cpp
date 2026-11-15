@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <fstream>
+#include <set>
+#include <sstream>
 #include <system_error>
 
 namespace mycds::gui {
@@ -192,6 +195,472 @@ void FileBrowserState::set_error_message(const std::string& msg) {
 
 void FileBrowserState::clear_error_message() {
     error_message_.clear();
+}
+
+// -----------------------------------------------------------------------------
+// LibraryCatalogState
+// -----------------------------------------------------------------------------
+
+namespace {
+
+std::vector<LibraryEntry> create_mock_library_entries() {
+    return {
+        {
+            "Pink Floyd",
+            "The Dark Side of the Moon",
+            1973,
+            "Progressive Rock",
+            "2026-10-12",
+            {
+                {1, 222, "Speak to Me / Breathe"},
+                {2, 255, "On the Run"},
+                {3, 178, "Time"},
+                {4, 321, "The Great Gig in the Sky"},
+                {5, 192, "Money"},
+                {6, 288, "Us and Them"},
+                {7, 364, "Any Colour You Like"},
+                {8, 213, "Brain Damage"},
+                {9, 260, "Eclipse"}
+            }
+        },
+        {
+            "The Beatles",
+            "Abbey Road",
+            1969,
+            "Rock",
+            "2026-11-01",
+            {
+                {1, 260, "Come Together"},
+                {2, 182, "Something"},
+                {3, 207, "Maxwell's Silver Hammer"},
+                {4, 196, "Oh! Darling"},
+                {5, 171, "Octopus's Garden"},
+                {6, 467, "I Want You (She's So Heavy)"},
+                {7, 185, "Here Comes the Sun"},
+                {8, 165, "Because"},
+                {9, 243, "You Never Give Me Your Money"}
+            }
+        },
+        {
+            "Miles Davis",
+            "Kind of Blue",
+            1959,
+            "Jazz",
+            "2026-10-25",
+            {
+                {1, 562, "So What"},
+                {2, 584, "Freddie Freeloader"},
+                {3, 592, "Blue in Green"},
+                {4, 693, "All Blues"},
+                {5, 565, "Flamenco Sketches"}
+            }
+        },
+        {
+            "Daft Punk",
+            "Random Access Memories",
+            2013,
+            "Electronic",
+            "2026-11-10",
+            {
+                {1, 274, "Give Life Back to Music"},
+                {2, 321, "The Game of Love"},
+                {3, 544, "Giorgio by Moroder"},
+                {4, 228, "Within"},
+                {5, 335, "Instant Crush"},
+                {6, 353, "Lose Yourself to Dance"},
+                {7, 405, "Touch"},
+                {8, 368, "Get Lucky"}
+            }
+        },
+        {
+            "Pink Floyd",
+            "Wish You Were Here",
+            1975,
+            "Progressive Rock",
+            "2026-09-18",
+            {
+                {1, 810, "Shine On You Crazy Diamond (Parts I-V)"},
+                {2, 452, "Welcome to the Machine"},
+                {3, 308, "Have a Cigar"},
+                {4, 340, "Wish You Were Here"},
+                {5, 748, "Shine On You Crazy Diamond (Parts VI-IX)"}
+            }
+        },
+        {
+            "Fleetwood Mac",
+            "Rumours",
+            1977,
+            "Rock",
+            "2026-11-14",
+            {
+                {1, 165, "Second Hand News"},
+                {2, 257, "Dreams"},
+                {3, 134, "Never Going Back Again"},
+                {4, 208, "Don't Stop"},
+                {5, 223, "Go Your Own Way"},
+                {6, 200, "Songbird"},
+                {7, 270, "The Chain"}
+            }
+        }
+    };
+}
+
+int compute_relevance_score(const LibraryEntry& entry, const std::string& query_lower) {
+    if (query_lower.empty()) {
+        return 1;
+    }
+
+    int score = 0;
+    const std::string artist_l = to_lower_ascii(entry.artist);
+    const std::string album_l = to_lower_ascii(entry.album);
+
+    if (artist_l == query_lower || album_l == query_lower) {
+        score += 100;
+    } else {
+        if (artist_l.find(query_lower) != std::string::npos) {
+            score += 40;
+        }
+        if (album_l.find(query_lower) != std::string::npos) {
+            score += 50;
+        }
+    }
+
+    for (const auto& trk : entry.tracks) {
+        if (to_lower_ascii(trk.title).find(query_lower) != std::string::npos) {
+            score += 20;
+        }
+    }
+    return score;
+}
+
+} // namespace
+
+LibraryCatalogState::LibraryCatalogState()
+    : entries_(create_mock_library_entries()) {}
+
+LibraryCatalogState::LibraryCatalogState(std::vector<LibraryEntry> entries)
+    : entries_(std::move(entries)) {}
+
+void LibraryCatalogState::set_search_query(const std::string& query) {
+    search_query_ = query;
+    selected_index_ = 0;
+}
+
+const std::string& LibraryCatalogState::search_query() const {
+    return search_query_;
+}
+
+void LibraryCatalogState::set_genre_filter(const std::string& genre) {
+    genre_filter_ = genre;
+    selected_index_ = 0;
+}
+
+const std::string& LibraryCatalogState::genre_filter() const {
+    return genre_filter_;
+}
+
+void LibraryCatalogState::set_year_filter(int year) {
+    year_filter_ = year;
+    selected_index_ = 0;
+}
+
+int LibraryCatalogState::year_filter() const {
+    return year_filter_;
+}
+
+void LibraryCatalogState::set_sort_mode(LibrarySortMode mode) {
+    sort_mode_ = mode;
+    selected_index_ = 0;
+}
+
+LibrarySortMode LibraryCatalogState::sort_mode() const {
+    return sort_mode_;
+}
+
+std::vector<std::string> LibraryCatalogState::available_genres() const {
+    std::set<std::string> unique_genres;
+    for (const auto& entry : entries_) {
+        if (!entry.genre.empty()) {
+            unique_genres.insert(entry.genre);
+        }
+    }
+    return std::vector<std::string>(unique_genres.begin(), unique_genres.end());
+}
+
+std::vector<int> LibraryCatalogState::available_years() const {
+    std::set<int> unique_years;
+    for (const auto& entry : entries_) {
+        if (entry.year > 0) {
+            unique_years.insert(entry.year);
+        }
+    }
+    return std::vector<int>(unique_years.rbegin(), unique_years.rend());
+}
+
+std::vector<const LibraryEntry*> LibraryCatalogState::filtered_entries() const {
+    const std::string query_lower = to_lower_ascii(search_query_);
+
+    struct ScoredEntry {
+        const LibraryEntry* entry;
+        int score;
+        std::size_t originalIndex;
+    };
+
+    std::vector<ScoredEntry> matches;
+    matches.reserve(entries_.size());
+
+    for (std::size_t i = 0; i < entries_.size(); ++i) {
+        const auto& entry = entries_[i];
+        if (!genre_filter_.empty() && entry.genre != genre_filter_) {
+            continue;
+        }
+        if (year_filter_ > 0 && entry.year != year_filter_) {
+            continue;
+        }
+        const int score = compute_relevance_score(entry, query_lower);
+        if (score <= 0) {
+            continue;
+        }
+        matches.push_back(ScoredEntry{&entry, score, i});
+    }
+
+    std::stable_sort(matches.begin(), matches.end(),
+                     [this](const ScoredEntry& a, const ScoredEntry& b) {
+                         switch (sort_mode_) {
+                             case LibrarySortMode::Relevance:
+                                 if (a.score != b.score) {
+                                     return a.score > b.score;
+                                 }
+                                 return a.originalIndex < b.originalIndex;
+                             case LibrarySortMode::YearNewest:
+                                 if (a.entry->year != b.entry->year) {
+                                     return a.entry->year > b.entry->year;
+                                 }
+                                 return a.originalIndex < b.originalIndex;
+                             case LibrarySortMode::YearOldest:
+                                 if (a.entry->year != b.entry->year) {
+                                     return a.entry->year < b.entry->year;
+                                 }
+                                 return a.originalIndex < b.originalIndex;
+                             case LibrarySortMode::RecentlyAdded:
+                                 if (a.entry->addedDate != b.entry->addedDate) {
+                                     return a.entry->addedDate > b.entry->addedDate;
+                                 }
+                                 return a.originalIndex < b.originalIndex;
+                         }
+                         return a.originalIndex < b.originalIndex;
+                     });
+
+    std::vector<const LibraryEntry*> result;
+    result.reserve(matches.size());
+    for (const auto& m : matches) {
+        result.push_back(m.entry);
+    }
+    return result;
+}
+
+void LibraryCatalogState::set_selected_index(std::size_t index) {
+    selected_index_ = index;
+}
+
+std::size_t LibraryCatalogState::selected_index() const {
+    return selected_index_;
+}
+
+// -----------------------------------------------------------------------------
+// DiskInfoState
+// -----------------------------------------------------------------------------
+
+DiskInfoState::DiskInfoState()
+    : inlay_slots_{
+          {"Front Cover", "Primary Jewel Case Booklet Front"},
+          {"Back Inlay", "Tray Card & Tracklist Artwork"},
+          {"Booklet Spread", "Inside Liner Notes & Credits"},
+          {"CD Disc Art", "Compact Disc Silkscreen Label"}
+      } {}
+
+void DiskInfoState::next_inlay() {
+    if (!inlay_slots_.empty()) {
+        active_inlay_index_ = (active_inlay_index_ + 1) % inlay_slots_.size();
+    }
+}
+
+void DiskInfoState::prev_inlay() {
+    if (!inlay_slots_.empty()) {
+        active_inlay_index_ = (active_inlay_index_ + inlay_slots_.size() - 1) % inlay_slots_.size();
+    }
+}
+
+std::size_t DiskInfoState::active_inlay_index() const {
+    return active_inlay_index_;
+}
+
+const std::vector<InlayImageSlot>& DiskInfoState::inlay_slots() const {
+    return inlay_slots_;
+}
+
+void DiskInfoState::set_active_source_index(std::size_t index) {
+    active_source_index_ = index;
+}
+
+std::size_t DiskInfoState::active_source_index() const {
+    return active_source_index_;
+}
+
+std::optional<int> DiskInfoState::release_year_for_album(const std::string& artist,
+                                                         const std::string& album) const {
+    const std::string artist_l = to_lower_ascii(artist);
+    const std::string album_l = to_lower_ascii(album);
+
+    for (const auto& entry : create_mock_library_entries()) {
+        if (to_lower_ascii(entry.album) == album_l ||
+            (album_l.find(to_lower_ascii(entry.album)) != std::string::npos &&
+             artist_l.find(to_lower_ascii(entry.artist)) != std::string::npos)) {
+            return entry.year;
+        }
+    }
+    return std::nullopt;
+}
+
+std::vector<EditorialSource> DiskInfoState::editorial_sources_for_album(const std::string& artist,
+                                                                        const std::string& album) const {
+    const std::string album_l = to_lower_ascii(album);
+    if (album_l.find("dark side of the moon") != std::string::npos) {
+        return {
+            {
+                "Wikipedia",
+                "The Dark Side of the Moon is the eighth studio album by the English rock band Pink Floyd, "
+                "released on 1 March 1973 by Harvest Records. Developed during live performances before recording "
+                "began, it was conceived as a concept album focusing on the pressures faced by the band and "
+                "modern life, featuring multitrack tape loops, analog synthesizers, and seamless transitions."
+            },
+            {
+                "Music Magazines",
+                "Rolling Stone & Classic Rock Retrospective:\n\n"
+                "Engineered by Alan Parsons at Abbey Road Studios, the album set a benchmark for studio "
+                "production and hi-fi demonstration discs. Its continuous suite structure rewards uninterrupted "
+                "CD playback from 'Speak to Me' through the final heartbeat of 'Eclipse'."
+            },
+            {
+                "Liner Notes",
+                "Recorded at Abbey Road Studios, London between June 1972 and January 1973.\n"
+                "Produced by Pink Floyd. Engineered by Alan Parsons.\n"
+                "Sleeve design by Hipgnosis and George Hardie."
+            }
+        };
+    }
+
+    if (album_l.find("abbey road") != std::string::npos) {
+        return {
+            {
+                "Wikipedia",
+                "Abbey Road is the eleventh studio album by the English rock band the Beatles, released on "
+                "26 September 1969. It was the last album the band recorded together, notable for its "
+                "symphonic Side Two medley and George Martin's orchestral arrangements."
+            },
+            {
+                "Music Magazines",
+                "Mojo / Sound On Sound Feature:\n\n"
+                "Recorded on a solid-state EMI TG12345 console, Abbey Road marked a dramatic shift toward "
+                "richer, warmer stereo imaging and prominent Moog synthesizer textures."
+            },
+            {
+                "Liner Notes",
+                "Produced by George Martin. Recorded at EMI Studios, Abbey Road, London (1969)."
+            }
+        };
+    }
+
+    return {
+        {
+            "Wikipedia",
+            "Album: " + album + "\nArtist: " + artist + "\n\n"
+            "No cached Wikipedia article is available for this disc yet. "
+            "Online metadata and editorial fetching will populate this section when connected."
+        },
+        {
+            "Music Magazines",
+            "No magazine reviews or retrospective articles are currently cached for \"" + album + "\"."
+        },
+        {
+            "Liner Notes",
+            "Disc loaded in player: " + artist + " - " + album + "."
+        }
+    };
+}
+
+// -----------------------------------------------------------------------------
+// Settings Persistence
+// -----------------------------------------------------------------------------
+
+std::filesystem::path default_settings_path() {
+    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && xdg[0] != '\0') {
+        return std::filesystem::path(xdg) / "mycds" / "settings.json";
+    }
+    if (const char* home = std::getenv("HOME"); home && home[0] != '\0') {
+        return std::filesystem::path(home) / ".config" / "mycds" / "settings.json";
+    }
+    return std::filesystem::path("mycds_settings.json");
+}
+
+AppSettings load_app_settings(const std::filesystem::path& path) {
+    AppSettings settings;
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        return settings;
+    }
+
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    const std::string content = ss.str();
+
+    auto parse_bool_key = [&](const std::string& key, bool default_val) {
+        const auto pos = content.find("\"" + key + "\"");
+        if (pos == std::string::npos) {
+            return default_val;
+        }
+        const auto colon = content.find(':', pos);
+        if (colon == std::string::npos) {
+            return default_val;
+        }
+        const auto true_pos = content.find("true", colon);
+        const auto false_pos = content.find("false", colon);
+        const auto newline_pos = content.find('\n', colon);
+        if (true_pos != std::string::npos && (newline_pos == std::string::npos || true_pos < newline_pos)) {
+            if (false_pos == std::string::npos || true_pos < false_pos) {
+                return true;
+            }
+        }
+        if (false_pos != std::string::npos && (newline_pos == std::string::npos || false_pos < newline_pos)) {
+            return false;
+        }
+        return default_val;
+    };
+
+    settings.play_when_started = parse_bool_key("play_when_started", settings.play_when_started);
+    settings.auto_play_on_disc_load = parse_bool_key("auto_play_on_disc_load", settings.auto_play_on_disc_load);
+    return settings;
+}
+
+bool save_app_settings(const std::filesystem::path& path, const AppSettings& settings) {
+    std::error_code ec;
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec) {
+            return false;
+        }
+    }
+
+    std::ofstream out(path, std::ios::trunc);
+    if (!out.is_open()) {
+        return false;
+    }
+
+    out << "{\n"
+        << "  \"play_when_started\": " << (settings.play_when_started ? "true" : "false") << ",\n"
+        << "  \"auto_play_on_disc_load\": " << (settings.auto_play_on_disc_load ? "true" : "false") << "\n"
+        << "}\n";
+    return out.good();
 }
 
 } // namespace mycds::gui

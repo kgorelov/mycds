@@ -293,3 +293,79 @@ TEST(CdDriveEnumerationTests, EnumerateDrivesDoesNotThrow) {
         EXPECT_FALSE(drv.devicePath.empty());
     }
 }
+
+TEST(LibraryCatalogStateTests, SearchFilterAndSortWorkDeterministically) {
+    LibraryCatalogState lib;
+    EXPECT_GE(lib.filtered_entries().size(), 5u);
+
+    // Search by track title
+    lib.set_search_query("Get Lucky");
+    auto res = lib.filtered_entries();
+    ASSERT_EQ(res.size(), 1u);
+    EXPECT_EQ(res[0]->album, "Random Access Memories");
+
+    // Search by artist + sort by year
+    lib.set_search_query("Pink Floyd");
+    lib.set_sort_mode(LibrarySortMode::YearNewest);
+    res = lib.filtered_entries();
+    ASSERT_EQ(res.size(), 2u);
+    EXPECT_EQ(res[0]->year, 1975);
+    EXPECT_EQ(res[1]->year, 1973);
+
+    lib.set_sort_mode(LibrarySortMode::YearOldest);
+    res = lib.filtered_entries();
+    ASSERT_EQ(res.size(), 2u);
+    EXPECT_EQ(res[0]->year, 1973);
+    EXPECT_EQ(res[1]->year, 1975);
+
+    // Clear search and filter by genre + sort by recently added
+    lib.set_search_query("");
+    lib.set_genre_filter("Rock");
+    lib.set_sort_mode(LibrarySortMode::RecentlyAdded);
+    res = lib.filtered_entries();
+    ASSERT_EQ(res.size(), 2u);
+    EXPECT_GE(res[0]->addedDate, res[1]->addedDate);
+}
+
+TEST(DiskInfoStateTests, InlayCyclingAndEditorialSources) {
+    DiskInfoState info;
+    ASSERT_GE(info.inlay_slots().size(), 2u);
+    EXPECT_EQ(info.active_inlay_index(), 0u);
+
+    info.next_inlay();
+    EXPECT_EQ(info.active_inlay_index(), 1u);
+
+    info.prev_inlay();
+    EXPECT_EQ(info.active_inlay_index(), 0u);
+
+    info.prev_inlay();
+    EXPECT_EQ(info.active_inlay_index(), info.inlay_slots().size() - 1);
+
+    const auto sources = info.editorial_sources_for_album("Pink Floyd", "The Dark Side of the Moon");
+    EXPECT_GE(sources.size(), 2u);
+}
+
+TEST(AppSettingsTests, PersistenceAndAutoPlayOnDiscLoad) {
+    const std::filesystem::path settings_path =
+        std::filesystem::temp_directory_path() / "mycds_settings_test" / "settings.json";
+    std::error_code ec;
+    std::filesystem::remove_all(settings_path.parent_path(), ec);
+
+    AppSettings saved{false, false};
+    EXPECT_TRUE(save_app_settings(settings_path, saved));
+
+    const AppSettings loaded = load_app_settings(settings_path);
+    EXPECT_FALSE(loaded.play_when_started);
+    EXPECT_FALSE(loaded.auto_play_on_disc_load);
+
+    CdDisplayModel model;
+    model.set_app_settings(loaded);
+    model.load_disc("Artist", "Album", {{1, 180, "Track 1"}});
+    EXPECT_FALSE(model.is_playing());
+
+    model.set_auto_play_on_disc_load(true);
+    model.load_disc("Artist", "Album 2", {{1, 180, "Track 1"}});
+    EXPECT_TRUE(model.is_playing());
+
+    std::filesystem::remove_all(settings_path.parent_path(), ec);
+}

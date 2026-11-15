@@ -13,6 +13,7 @@
 #include "cd_eject_menu_widget.h"
 #include "cd_playlist_widget.h"
 #include "cd_volume_meter_widget.h"
+#include "eject_menu_state.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
@@ -96,6 +97,12 @@ int main(int argc, char* argv[]) {
     }
 
     mycds::gui::CdDisplayModel display_model;
+    const mycds::gui::AppSettings startup_settings =
+        mycds::gui::load_app_settings(mycds::gui::default_settings_path());
+    display_model.set_app_settings(startup_settings);
+    if (!startup_settings.play_when_started) {
+        display_model.stop();
+    }
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
         if (arg == "--stopped" || arg == "--paused") {

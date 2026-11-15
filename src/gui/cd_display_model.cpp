@@ -474,6 +474,22 @@ EjectMenuScreen CdDisplayModel::active_eject_screen() const {
     return active_eject_screen_;
 }
 
+void CdDisplayModel::set_app_settings(const AppSettings& settings) {
+    app_settings_ = settings;
+}
+
+const AppSettings& CdDisplayModel::app_settings() const {
+    return app_settings_;
+}
+
+void CdDisplayModel::set_play_when_started(bool enabled) {
+    app_settings_.play_when_started = enabled;
+}
+
+void CdDisplayModel::set_auto_play_on_disc_load(bool enabled) {
+    app_settings_.auto_play_on_disc_load = enabled;
+}
+
 void CdDisplayModel::load_disc(const std::string& album_title, const std::vector<TrackInfo>& tracks) {
     load_disc(artist_name_, album_title, tracks);
 }
@@ -488,7 +504,7 @@ void CdDisplayModel::load_disc(const std::string& artist_name, const std::string
     recording_ = false;
     current_track_index_ = 0;
     track_elapsed_seconds_ = 0.0;
-    playing_ = true;
+    playing_ = app_settings_.auto_play_on_disc_load;
     eject_menu_open_ = false;
 }
 

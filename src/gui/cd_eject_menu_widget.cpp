@@ -372,28 +372,302 @@ void RenderImageFileScreen(CdDisplayModel& model) {
     ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }
 
-void RenderLibraryScreen(CdDisplayModel& /*model*/) {
-    ImGui::TextColored(ImVec4(0.75f, 0.78f, 0.84f, 1.0f),
-                       "Search and filter discs in your library by artist, album, track, genre, or year.");
+void RenderLibraryScreen(CdDisplayModel& model) {
+    static LibraryCatalogState library;
+    static char search_buf[128] = "";
+
+    ImGui::TextDisabled("Mock Library Catalog (search by artist, album, or track name):");
     ImGui::Spacing();
-    ImGui::TextDisabled("Mock library catalog, search, filters, and sorting will be added in Phase 3.");
+
+    // Search + Filter + Sort toolbar
+    const float avail_w = ImGui::GetContentRegionAvail().x;
+    const float search_w = std::max(180.0f, avail_w * 0.36f);
+    ImGui::SetNextItemWidth(search_w);
+    if (ImGui::InputTextWithHint("##LibSearch", "Search artist, album, or track...",
+                                 search_buf, sizeof(search_buf))) {
+        library.set_search_query(search_buf);
+    }
+
+    ImGui::SameLine();
+    const auto genres = library.available_genres();
+    const std::string& active_genre = library.genre_filter();
+    const char* genre_preview = active_genre.empty() ? "All Genres" : active_genre.c_str();
+    ImGui::SetNextItemWidth(150.0f);
+    if (ImGui::BeginCombo("##LibGenreFilter", genre_preview)) {
+        if (ImGui::Selectable("All Genres", active_genre.empty())) {
+            library.set_genre_filter("");
+        }
+        for (const auto& g : genres) {
+            const bool selected = (active_genre == g);
+            if (ImGui::Selectable(g.c_str(), selected)) {
+                library.set_genre_filter(g);
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::SameLine();
+    const auto years = library.available_years();
+    const int active_year = library.year_filter();
+    char year_preview[24];
+    if (active_year <= 0) {
+        std::snprintf(year_preview, sizeof(year_preview), "All Years");
+    } else {
+        std::snprintf(year_preview, sizeof(year_preview), "%d", active_year);
+    }
+    ImGui::SetNextItemWidth(110.0f);
+    if (ImGui::BeginCombo("##LibYearFilter", year_preview)) {
+        if (ImGui::Selectable("All Years", active_year == 0)) {
+            library.set_year_filter(0);
+        }
+        for (int y : years) {
+            char ybuf[16];
+            std::snprintf(ybuf, sizeof(ybuf), "%d", y);
+            if (ImGui::Selectable(ybuf, active_year == y)) {
+                library.set_year_filter(y);
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::SameLine();
+    const char* sort_labels[] = {
+        "Sort: Relevance",
+        "Sort: Year (Newest)",
+        "Sort: Year (Oldest)",
+        "Sort: Recently Added"
+    };
+    const int sort_idx = static_cast<int>(library.sort_mode());
+    ImGui::SetNextItemWidth(175.0f);
+    if (ImGui::BeginCombo("##LibSortMode", sort_labels[sort_idx])) {
+        for (int i = 0; i < 4; ++i) {
+            if (ImGui::Selectable(sort_labels[i], sort_idx == i)) {
+                library.set_sort_mode(static_cast<LibrarySortMode>(i));
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::Spacing();
+
+    const auto matches = library.filtered_entries();
+    const float body_h = std::max(140.0f, ImGui::GetContentRegionAvail().y - 54.0f);
+    const float left_w = std::max(260.0f, avail_w * 0.54f);
+
+    // Left: matching albums list
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
+    ImGui::BeginChild("##LibAlbumList", ImVec2(left_w, body_h), true);
+    {
+        if (matches.empty()) {
+            ImGui::TextDisabled("No albums match your search/filter criteria.");
+        } else {
+            for (std::size_t i = 0; i < matches.size(); ++i) {
+                const auto* entry = matches[i];
+                const bool is_selected = (library.selected_index() == i);
+                char row_buf[256];
+                std::snprintf(row_buf, sizeof(row_buf), "%s - %s (%d) [%s]",
+                              entry->artist.c_str(), entry->album.c_str(),
+                              entry->year, entry->genre.c_str());
+                if (ImGui::Selectable(row_buf, is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                    library.set_selected_index(i);
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        model.load_disc(entry->artist, entry->album, entry->tracks);
+                        model.set_has_cddb_data(true);
+                    }
+                }
+            }
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    // Right: selected album track preview
+    const LibraryEntry* selected_entry = (!matches.empty() && library.selected_index() < matches.size())
+        ? matches[library.selected_index()]
+        : nullptr;
+
+    ImGui::BeginChild("##LibTrackPreview", ImVec2(0.0f, body_h), true);
+    {
+        if (!selected_entry) {
+            ImGui::TextDisabled("Select an album to preview tracks.");
+        } else {
+            ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s", selected_entry->album.c_str());
+            ImGui::TextColored(ImVec4(0.80f, 0.84f, 0.90f, 1.0f), "%s (%d)  |  Added: %s",
+                               selected_entry->artist.c_str(), selected_entry->year,
+                               selected_entry->addedDate.c_str());
+            ImGui::Separator();
+            ImGui::Spacing();
+            for (const auto& trk : selected_entry->tracks) {
+                const std::string dur = FormatDurationMmSs(trk.duration_seconds);
+                ImGui::Text("%02d. %s  (%s)", trk.number, trk.title.c_str(), dur.c_str());
+            }
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    ImGui::Spacing();
+    const ImVec2 load_pos = ImGui::GetCursorScreenPos();
+    if (RenderHardwareTextButton("##BtnLoadLibAlbum", "Load Album", load_pos, ImVec2(170.0f, 38.0f),
+                                 false, selected_entry != nullptr)) {
+        model.load_disc(selected_entry->artist, selected_entry->album, selected_entry->tracks);
+        model.set_has_cddb_data(true);
+    }
+    ImGui::SetCursorScreenPos(ImVec2(load_pos.x, load_pos.y + 42.0f));
+    ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }
 
 void RenderDiskInfoScreen(CdDisplayModel& model) {
-    ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s - %s",
-                       model.artist_name().c_str(), model.album_title().c_str());
-    ImGui::Spacing();
-    ImGui::TextColored(ImVec4(0.75f, 0.78f, 0.84f, 1.0f),
-                       "Loaded tracks: %d", model.total_tracks());
-    ImGui::Spacing();
-    ImGui::TextDisabled("Cover/inlay image gallery and band/album notes will be added in Phase 3.");
+    static DiskInfoState info_state;
+
+    const float avail_w = ImGui::GetContentRegionAvail().x;
+    const float avail_h = ImGui::GetContentRegionAvail().y;
+    const float left_col_w = std::max(300.0f, avail_w * 0.44f);
+
+    // Left column: Multi-inlay Cover Art Viewer + Release Info + Track List
+    ImGui::BeginChild("##DiskInfoLeft", ImVec2(left_col_w, avail_h), false);
+    {
+        const auto& slots = info_state.inlay_slots();
+        const std::size_t inlay_idx = info_state.active_inlay_index();
+        const InlayImageSlot& active_slot = slots[inlay_idx];
+
+        // Cover / Inlay Artwork Card
+        const float art_w = std::min(left_col_w - 8.0f, 260.0f);
+        const float art_h = 165.0f;
+        const ImVec2 art_min = ImGui::GetCursorScreenPos();
+        const ImVec2 art_max(art_min.x + art_w, art_min.y + art_h);
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+        draw_list->AddRectFilled(art_min, art_max, IM_COL32(16, 18, 22, 255), 4.0f);
+        draw_list->AddRect(art_min, art_max, IM_COL32(0, 180, 220, 140), 4.0f, 0, 1.5f);
+
+        // Stylized CD jewel-case disc graphic inside the inlay frame
+        const ImVec2 disc_center(art_min.x + art_w * 0.5f, art_min.y + art_h * 0.48f);
+        draw_list->AddCircle(disc_center, 48.0f, IM_COL32(0, 210, 240, 140), 36, 1.5f);
+        draw_list->AddCircle(disc_center, 15.0f, IM_COL32(0, 210, 240, 110), 24, 1.2f);
+        draw_list->AddCircleFilled(disc_center, 7.0f, IM_COL32(12, 14, 18, 255));
+
+        char slot_badge[64];
+        std::snprintf(slot_badge, sizeof(slot_badge), "%zu / %zu: %s",
+                      inlay_idx + 1, slots.size(), active_slot.label.c_str());
+        draw_list->AddText(ImVec2(art_min.x + 10.0f, art_min.y + 8.0f), kColCyanBright, slot_badge);
+        draw_list->AddText(ImVec2(art_min.x + 10.0f, art_max.y - 22.0f),
+                           IM_COL32(170, 180, 195, 220), active_slot.subtitle.c_str());
+
+        ImGui::Dummy(ImVec2(art_w, art_h + 6.0f));
+
+        // Prev / Next inlay switcher buttons
+        const ImVec2 nav_pos = ImGui::GetCursorScreenPos();
+        if (RenderHardwareTextButton("##InlayPrev", "< Prev", nav_pos, ImVec2(96.0f, 30.0f))) {
+            info_state.prev_inlay();
+        }
+        if (RenderHardwareTextButton("##InlayNext", "Next >",
+                                     ImVec2(nav_pos.x + 106.0f, nav_pos.y), ImVec2(96.0f, 30.0f))) {
+            info_state.next_inlay();
+        }
+        ImGui::SetCursorScreenPos(ImVec2(nav_pos.x, nav_pos.y + 38.0f));
+
+        // Release metadata & Track list
+        ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s", model.album_title().c_str());
+        const auto release_year = info_state.release_year_for_album(model.artist_name(), model.album_title());
+        if (release_year.has_value()) {
+            ImGui::Text("Artist: %s  |  Released: %d", model.artist_name().c_str(), *release_year);
+        } else {
+            ImGui::Text("Artist: %s  |  Released: Unknown", model.artist_name().c_str());
+        }
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
+        ImGui::BeginChild("##DiskInfoTracks", ImVec2(0.0f, 0.0f), true);
+        {
+            const auto& tracks = model.tracks();
+            for (const auto& trk : tracks) {
+                const std::string dur = FormatDurationMmSs(trk.duration_seconds);
+                const std::string title = trk.title.empty()
+                    ? ("Track " + std::to_string(trk.number))
+                    : trk.title;
+                ImGui::Text("%02d. %s  (%s)", trk.number, title.c_str(), dur.c_str());
+            }
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine(0.0f, 14.0f);
+
+    // Right column: Band & Album editorial sources (Wikipedia, Music Magazines, Liner Notes)
+    ImGui::BeginChild("##DiskInfoRight", ImVec2(0.0f, avail_h), false);
+    {
+        const auto sources = info_state.editorial_sources_for_album(model.artist_name(), model.album_title());
+        const ImVec2 tab_pos = ImGui::GetCursorScreenPos();
+        float tab_x = tab_pos.x;
+        for (std::size_t i = 0; i < sources.size(); ++i) {
+            char btn_id[32];
+            std::snprintf(btn_id, sizeof(btn_id), "##InfoSrc%zu", i);
+            const bool is_active = (info_state.active_source_index() == i);
+            if (RenderHardwareTextButton(btn_id, sources[i].sourceName.c_str(),
+                                         ImVec2(tab_x, tab_pos.y), ImVec2(148.0f, 34.0f), is_active)) {
+                info_state.set_active_source_index(i);
+            }
+            tab_x += 156.0f;
+        }
+        ImGui::SetCursorScreenPos(ImVec2(tab_pos.x, tab_pos.y + 44.0f));
+
+        const std::size_t active_idx = std::min(info_state.active_source_index(), sources.size() - 1);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
+        ImGui::BeginChild("##DiskInfoNotes", ImVec2(0.0f, 0.0f), true);
+        {
+            ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s",
+                               sources[active_idx].sourceName.c_str());
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", sources[active_idx].text.c_str());
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+    ImGui::EndChild();
 }
 
-void RenderSettingsScreen(CdDisplayModel& /*model*/) {
-    ImGui::TextColored(ImVec4(0.75f, 0.78f, 0.84f, 1.0f),
-                       "Configure startup and disc-loading playback preferences.");
+void RenderSettingsScreen(CdDisplayModel& model) {
+    static std::string status_msg;
+
+    ImGui::TextColored(ImVec4(0.78f, 0.82f, 0.88f, 1.0f),
+                       "Configure startup and disc-loading playback behavior:");
     ImGui::Spacing();
-    ImGui::TextDisabled("Settings toggles (Play when started, Auto play on disc load) will be added in Phase 3.");
+    ImGui::Spacing();
+
+    AppSettings settings = model.app_settings();
+    bool changed = false;
+
+    if (ImGui::Checkbox("Play when started", &settings.play_when_started)) {
+        changed = true;
+    }
+    ImGui::TextDisabled("    Automatically begin playback when the application starts.");
+    ImGui::Spacing();
+
+    if (ImGui::Checkbox("Auto play on disc load", &settings.auto_play_on_disc_load)) {
+        changed = true;
+    }
+    ImGui::TextDisabled("    Automatically start playing after loading a CD, image file, or library album.");
+    ImGui::Spacing();
+
+    if (changed) {
+        model.set_app_settings(settings);
+        const auto cfg_path = default_settings_path();
+        if (save_app_settings(cfg_path, settings)) {
+            status_msg = "Settings saved to " + cfg_path.string();
+        } else {
+            status_msg = "Settings updated in memory (could not write " + cfg_path.string() + ").";
+        }
+    }
+
+    if (!status_msg.empty()) {
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.25f, 0.90f, 0.45f, 1.0f), "%s", status_msg.c_str());
+    }
 }
 
 } // namespace
