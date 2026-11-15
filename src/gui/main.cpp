@@ -117,6 +117,10 @@ int main(int argc, char* argv[]) {
             ev.window.windowID == SDL_GetWindowID(window)) {
             running = false;
         }
+        if ((ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || ev.type == SDL_EVENT_WINDOW_RESIZED) &&
+            ev.window.windowID == SDL_GetWindowID(window)) {
+            mycds::gui::GetBrushedMetal().InvalidateCache();
+        }
         if (ev.type == SDL_EVENT_KEY_DOWN) {
             if (ev.key.key == SDLK_Q || ev.key.key == 'Q' ||
                 ev.key.scancode == SDL_SCANCODE_Q ||

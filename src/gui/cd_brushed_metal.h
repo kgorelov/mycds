@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <SDL3/SDL_opengl.h>
+#include <SDL3/SDL_opengl_glext.h>
 #include "imgui.h"
 
 namespace mycds::gui {
@@ -43,17 +44,36 @@ public:
     GLuint GetTextureId() const { return texture_id_; }
     ImTextureRef GetTextureRef() const;
 
+    // FBO Caching API
+    void InvalidateCache();
+    bool RebuildCache(int width, int height);
+    GLuint GetCachedTextureId() const { return cached_texture_id_; }
+    GLuint GetFboId() const { return fbo_id_; }
+    int GetCachedWidth() const { return cached_width_; }
+    int GetCachedHeight() const { return cached_height_; }
+    bool IsCacheValid() const { return cached_texture_id_ != 0 && !cache_dirty_; }
+    ImTextureRef GetCachedTextureRef() const;
+
     void RenderBackground(ImDrawList* draw_list, const ImVec2& screen_pos, const ImVec2& screen_size);
+    void RenderBackgroundDirect(ImDrawList* draw_list, const ImVec2& screen_pos, const ImVec2& screen_size);
     void RenderPanelChassis(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos, float rounding = 8.0f);
     void RenderChassisBolt(ImDrawList* draw_list, const ImVec2& center, float radius = 7.0f);
 
     static std::vector<RgbaPixel> GeneratePixels(int width, int height, uint32_t seed = 0x4D594344);
 
 private:
+    void DestroyFbo();
+
     GLuint texture_id_{0};
     int width_{0};
     int height_{0};
     bool initialized_{false};
+
+    GLuint fbo_id_{0};
+    GLuint cached_texture_id_{0};
+    int cached_width_{0};
+    int cached_height_{0};
+    bool cache_dirty_{true};
 };
 
 CdBrushedMetal& GetBrushedMetal();

@@ -2,7 +2,9 @@
 
 #include <cmath>
 
+#include <SDL3/SDL.h>
 #include "gui/cd_brushed_metal.h"
+#include "imgui_impl_opengl3.h"
 
 using namespace mycds::gui;
 
@@ -97,8 +99,99 @@ TEST(CdBrushedMetalTests, NullDrawListSafety) {
     CdBrushedMetal metal;
     // Calling render methods with nullptr draw_list must safely no-op without crashing
     metal.RenderBackground(nullptr, ImVec2(0, 0), ImVec2(100, 100));
+    metal.RenderBackgroundDirect(nullptr, ImVec2(0, 0), ImVec2(100, 100));
     metal.RenderPanelChassis(nullptr, ImVec2(0, 0), ImVec2(100, 100));
     metal.RenderChassisBolt(nullptr, ImVec2(50, 50), 7.0f);
+}
+
+TEST(CdBrushedMetalTests, CacheInitialStateAndInvalidation) {
+    CdBrushedMetal metal;
+    EXPECT_EQ(metal.GetCachedTextureId(), 0u);
+    EXPECT_EQ(metal.GetFboId(), 0u);
+    EXPECT_EQ(metal.GetCachedWidth(), 0);
+    EXPECT_EQ(metal.GetCachedHeight(), 0);
+    EXPECT_FALSE(metal.IsCacheValid());
+
+    metal.InvalidateCache();
+    EXPECT_FALSE(metal.IsCacheValid());
+}
+
+TEST(CdBrushedMetalTests, RebuildCacheWithoutGlContextSafelyReturnsFalse) {
+    CdBrushedMetal metal;
+    EXPECT_FALSE(metal.RebuildCache(0, 0));
+    EXPECT_FALSE(metal.RebuildCache(-10, 100));
+    EXPECT_FALSE(metal.RebuildCache(100, -10));
+    // When no OpenGL context exists, RebuildCache must safely return false without crashing
+    EXPECT_FALSE(metal.RebuildCache(800, 600));
+    EXPECT_FALSE(metal.IsCacheValid());
+}
+
+TEST(CdBrushedMetalTests, FboCacheCreationWithGlContext) {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        GTEST_SKIP() << "SDL_Init failed (no video driver available)";
+    }
+
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+
+    SDL_Window* window = SDL_CreateWindow("TestFBO", 640, 480, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+    if (!window) {
+        SDL_Quit();
+        GTEST_SKIP() << "SDL_CreateWindow failed";
+    }
+
+    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
+    if (!gl_context) {
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        GTEST_SKIP() << "SDL_GL_CreateContext failed";
+    }
+
+    SDL_GL_MakeCurrent(window, gl_context);
+
+    IMGUI_CHECKVERSION();
+    ImGuiContext* imgui_ctx = ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(640.0f, 480.0f);
+    io.DeltaTime = 1.0f / 60.0f;
+    io.Fonts->AddFontDefaultVector();
+    ImGui_ImplOpenGL3_Init("#version 130");
+
+    CdBrushedMetal metal;
+    EXPECT_TRUE(metal.Initialize(CdBrushedMetal::kDefaultTileSizeWidth, CdBrushedMetal::kDefaultTileSizeHeight));
+
+    // Force ImGui NewFrame to ensure backend device objects are ready
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui::NewFrame();
+
+    EXPECT_TRUE(metal.RebuildCache(640, 480));
+    EXPECT_TRUE(metal.IsCacheValid());
+    EXPECT_NE(metal.GetCachedTextureId(), 0u);
+    EXPECT_NE(metal.GetFboId(), 0u);
+    EXPECT_EQ(metal.GetCachedWidth(), 640);
+    EXPECT_EQ(metal.GetCachedHeight(), 480);
+
+    // Invalidation resets validity
+    metal.InvalidateCache();
+    EXPECT_FALSE(metal.IsCacheValid());
+
+    // Rebuild at new dimensions
+    EXPECT_TRUE(metal.RebuildCache(800, 600));
+    EXPECT_TRUE(metal.IsCacheValid());
+    EXPECT_EQ(metal.GetCachedWidth(), 800);
+    EXPECT_EQ(metal.GetCachedHeight(), 600);
+
+    metal.Shutdown();
+    EXPECT_EQ(metal.GetCachedTextureId(), 0u);
+    EXPECT_EQ(metal.GetFboId(), 0u);
+    EXPECT_FALSE(metal.IsCacheValid());
+
+    ImGui::Render();
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui::DestroyContext(imgui_ctx);
+    SDL_GL_DestroyContext(gl_context);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
 }
 
 TEST(CdBrushedMetalTests, SymmetricTileBoundaries) {

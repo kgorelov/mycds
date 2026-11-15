@@ -5,6 +5,9 @@
 #include <cstdint>
 #include <vector>
 
+#include <SDL3/SDL_video.h>
+#include "imgui_impl_opengl3.h"
+
 namespace mycds::gui {
 
 namespace {
@@ -15,6 +18,35 @@ constexpr float kPi = 3.14159265358979323846f;
 
 float Smoothstep(float t) {
     return t * t * (3.0f - 2.0f * t);
+}
+
+using PFNGLGENFRAMEBUFFERSPROC = void (APIENTRY *)(GLsizei n, GLuint *framebuffers);
+using PFNGLBINDFRAMEBUFFERPROC = void (APIENTRY *)(GLenum target, GLuint framebuffer);
+using PFNGLFRAMEBUFFERTEXTURE2DPROC = void (APIENTRY *)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
+using PFNGLCHECKFRAMEBUFFERSTATUSPROC = GLenum (APIENTRY *)(GLenum target);
+using PFNGLDELETEFRAMEBUFFERSPROC = void (APIENTRY *)(GLsizei n, const GLuint *framebuffers);
+
+PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers_fn = nullptr;
+PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer_fn = nullptr;
+PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D_fn = nullptr;
+PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus_fn = nullptr;
+PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers_fn = nullptr;
+
+bool InitFboProcs() {
+    if (glBindFramebuffer_fn != nullptr) {
+        return true;
+    }
+    glGenFramebuffers_fn = reinterpret_cast<PFNGLGENFRAMEBUFFERSPROC>(SDL_GL_GetProcAddress("glGenFramebuffers"));
+    glBindFramebuffer_fn = reinterpret_cast<PFNGLBINDFRAMEBUFFERPROC>(SDL_GL_GetProcAddress("glBindFramebuffer"));
+    glFramebufferTexture2D_fn = reinterpret_cast<PFNGLFRAMEBUFFERTEXTURE2DPROC>(SDL_GL_GetProcAddress("glFramebufferTexture2D"));
+    glCheckFramebufferStatus_fn = reinterpret_cast<PFNGLCHECKFRAMEBUFFERSTATUSPROC>(SDL_GL_GetProcAddress("glCheckFramebufferStatus"));
+    glDeleteFramebuffers_fn = reinterpret_cast<PFNGLDELETEFRAMEBUFFERSPROC>(SDL_GL_GetProcAddress("glDeleteFramebuffers"));
+
+    return (glGenFramebuffers_fn != nullptr &&
+            glBindFramebuffer_fn != nullptr &&
+            glFramebufferTexture2D_fn != nullptr &&
+            glCheckFramebufferStatus_fn != nullptr &&
+            glDeleteFramebuffers_fn != nullptr);
 }
 
 } // namespace
@@ -165,7 +197,24 @@ bool CdBrushedMetal::EnsureCapacity(int required_width, int required_height) {
     return Initialize(kDefaultTileSizeWidth, kDefaultTileSizeHeight);
 }
 
+void CdBrushedMetal::DestroyFbo() {
+    if (fbo_id_ != 0) {
+        if (glDeleteFramebuffers_fn != nullptr) {
+            glDeleteFramebuffers_fn(1, &fbo_id_);
+        }
+        fbo_id_ = 0;
+    }
+    if (cached_texture_id_ != 0) {
+        glDeleteTextures(1, &cached_texture_id_);
+        cached_texture_id_ = 0;
+    }
+    cached_width_ = 0;
+    cached_height_ = 0;
+    cache_dirty_ = true;
+}
+
 void CdBrushedMetal::Shutdown() {
+    DestroyFbo();
     if (texture_id_ != 0) {
         glDeleteTextures(1, &texture_id_);
         texture_id_ = 0;
@@ -173,6 +222,110 @@ void CdBrushedMetal::Shutdown() {
     initialized_ = false;
     width_ = 0;
     height_ = 0;
+}
+
+void CdBrushedMetal::InvalidateCache() {
+    cache_dirty_ = true;
+}
+
+ImTextureRef CdBrushedMetal::GetCachedTextureRef() const {
+    return ImTextureRef(reinterpret_cast<void*>(static_cast<intptr_t>(cached_texture_id_)));
+}
+
+bool CdBrushedMetal::RebuildCache(int width, int height) {
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    if (SDL_GL_GetCurrentContext() == nullptr || !InitFboProcs()) {
+        return false;
+    }
+
+    if (ImGui::GetCurrentContext() == nullptr) {
+        return false;
+    }
+
+    if (cached_width_ != width || cached_height_ != height || cached_texture_id_ == 0 || fbo_id_ == 0) {
+        DestroyFbo();
+
+        glGenTextures(1, &cached_texture_id_);
+        if (cached_texture_id_ == 0) {
+            return false;
+        }
+
+        glBindTexture(GL_TEXTURE_2D, cached_texture_id_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glGenFramebuffers_fn(1, &fbo_id_);
+        if (fbo_id_ == 0) {
+            glDeleteTextures(1, &cached_texture_id_);
+            cached_texture_id_ = 0;
+            return false;
+        }
+
+        GLint prev_fbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
+        glBindFramebuffer_fn(GL_FRAMEBUFFER, fbo_id_);
+        glFramebufferTexture2D_fn(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cached_texture_id_, 0);
+
+        const GLenum status = glCheckFramebufferStatus_fn(GL_FRAMEBUFFER);
+        glBindFramebuffer_fn(GL_FRAMEBUFFER, prev_fbo);
+
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            DestroyFbo();
+            return false;
+        }
+
+        cached_width_ = width;
+        cached_height_ = height;
+    }
+
+    // Build the draw list for the background faceplate
+    ImDrawList draw_list(ImGui::GetDrawListSharedData());
+    draw_list._ResetForNewFrame();
+    draw_list.PushClipRect(ImVec2(0.0f, 0.0f), ImVec2(static_cast<float>(width), static_cast<float>(height)), false);
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.Fonts && io.Fonts->IsBuilt()) {
+        draw_list.PushTexture(io.Fonts->TexRef);
+    }
+
+    RenderBackgroundDirect(&draw_list, ImVec2(0.0f, 0.0f), ImVec2(static_cast<float>(width), static_cast<float>(height)));
+
+    if (io.Fonts && io.Fonts->IsBuilt()) {
+        draw_list.PopTexture();
+    }
+    draw_list.PopClipRect();
+
+    ImDrawData draw_data;
+    draw_data.Valid = true;
+    draw_data.AddDrawList(&draw_list);
+    draw_data.DisplayPos = ImVec2(0.0f, 0.0f);
+    draw_data.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
+    draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
+
+    // Save previous framebuffer and viewport state
+    GLint prev_fbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fbo);
+    GLint prev_viewport[4];
+    glGetIntegerv(GL_VIEWPORT, prev_viewport);
+
+    glBindFramebuffer_fn(GL_FRAMEBUFFER, fbo_id_);
+    glViewport(0, 0, width, height);
+    glClearColor(0.08f, 0.08f, 0.09f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    ImGui_ImplOpenGL3_RenderDrawData(&draw_data);
+
+    glBindFramebuffer_fn(GL_FRAMEBUFFER, prev_fbo);
+    glViewport(prev_viewport[0], prev_viewport[1], prev_viewport[2], prev_viewport[3]);
+
+    cache_dirty_ = false;
+    return true;
 }
 
 ImTextureRef CdBrushedMetal::GetTextureRef() const {
@@ -221,6 +374,31 @@ void CdBrushedMetal::RenderChassisBolt(ImDrawList* draw_list, const ImVec2& cent
 }
 
 void CdBrushedMetal::RenderBackground(ImDrawList* draw_list, const ImVec2& screen_pos, const ImVec2& screen_size) {
+    if (!draw_list) {
+        return;
+    }
+
+    const int target_w = static_cast<int>(screen_size.x);
+    const int target_h = static_cast<int>(screen_size.y);
+
+    if (cache_dirty_ || cached_texture_id_ == 0 || cached_width_ != target_w || cached_height_ != target_h) {
+        RebuildCache(target_w, target_h);
+    }
+
+    if (cached_texture_id_ != 0) {
+        draw_list->AddImage(
+            GetCachedTextureRef(),
+            screen_pos,
+            ImVec2(screen_pos.x + screen_size.x, screen_pos.y + screen_size.y),
+            ImVec2(0.0f, 1.0f),
+            ImVec2(1.0f, 0.0f)
+        );
+    } else {
+        RenderBackgroundDirect(draw_list, screen_pos, screen_size);
+    }
+}
+
+void CdBrushedMetal::RenderBackgroundDirect(ImDrawList* draw_list, const ImVec2& screen_pos, const ImVec2& screen_size) {
     if (!draw_list) {
         return;
     }

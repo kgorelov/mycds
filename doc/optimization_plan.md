@@ -65,12 +65,14 @@ Profiling via `gprofng` / `gp-collect-app` and static inspection highlights four
   - **Hands-off Playback Mode (Interval 2 / 30 FPS):** When music is playing but the user is not actively interacting (mouse stationary for > 250 ms), the swap interval dynamically transitions to `2` (every 2nd hardware VSync). This synchronizes directly with the display controller hardware with zero timer drift or Mesa DRI3 spin-waiting, cutting playback CPU by ~46% (**2.80% CPU**).
   - **Idle Mode (Interval 1 + Kernel Sleep):** When playback is stopped or paused, the loop sleeps in the kernel via `SDL_WaitEventTimeout()` between colon blinks, consuming only **~0.0% – 0.20% CPU**. Any user input immediately wakes the thread with 0 ms latency.
 
-### Phase 3: Background Faceplate Caching with Framebuffer Object (Medium Priority)
+### Phase 3: Background Faceplate Caching with Framebuffer Object [COMPLETED]
 *Target: Reduce per-frame vertex count and draw call complexity by ~30–40%.*
+*Result: Replaced ~30–40 per-frame draw primitives, trigonometric circle/hex math, and 15 texture slices with 1 single textured quad per frame.*
 
-- **Mechanism:** Render the brushed metal background, chamfer highlight lines, outer bezels, and 4 corner chassis bolts once into an offscreen OpenGL framebuffer (FBO) / texture.
-- **Trigger:** Re-render the background texture only at startup and whenever the window is resized (`SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED`).
-- **Render Loop:** In [src/gui/cd_brushed_metal.cpp](file:///home/kgorelov/git/mycds/src/gui/cd_brushed_metal.cpp#L223), draw the entire faceplate using a single `draw_list->AddImage()` quad.
+- **Mechanism:** Rendered the brushed metal background, chamfer highlight lines, outer bezels, and 4 corner chassis bolts once into an offscreen OpenGL framebuffer (FBO) / texture in [src/gui/cd_brushed_metal.cpp](file:///home/kgorelov/git/mycds/src/gui/cd_brushed_metal.cpp#L254-L352).
+- **Trigger:** Re-renders the background texture only at startup and whenever the window is resized (`SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED` or `SDL_EVENT_WINDOW_RESIZED`) in [src/gui/main.cpp](file:///home/kgorelov/git/mycds/src/gui/main.cpp#L120-L125).
+- **Render Loop:** In [src/gui/cd_brushed_metal.cpp](file:///home/kgorelov/git/mycds/src/gui/cd_brushed_metal.cpp#L254), draws the entire faceplate using a single `draw_list->AddImage()` quad with automatic fallback to direct procedural rendering if OpenGL FBO is unavailable.
+- **Verification:** Tested across all platforms with headless safety checks and an integrated OpenGL FBO test suite in [tests/cd_brushed_metal_tests.cpp](file:///home/kgorelov/git/mycds/tests/cd_brushed_metal_tests.cpp#L127-L186).
 
 ### Phase 4: Button Face Noise & Static Geometry Optimization (Low Priority)
 *Target: Eliminate redundant CPU mathematical evaluations per frame.*
