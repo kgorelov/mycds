@@ -227,6 +227,10 @@ int main(int argc, char* argv[]) {
             if (ImGui::IsKeyPressed(ImGuiKey_E)) {
                 display_model.open_eject_menu();
             }
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                display_model.stop();
+                display_model.open_eject_menu();
+            }
             const double seek_dt = std::min(static_cast<double>(io.DeltaTime), 0.05);
             if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
                 display_model.seek_backward(10.0 * seek_dt);
