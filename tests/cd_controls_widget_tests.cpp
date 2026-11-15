@@ -1,13 +1,17 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <vector>
 
 #include "gui/cd_controls_widget.h"
 #include "gui/cd_display_model.h"
 #include "gui/cd_display_widget.h"
 #include "gui/cd_eject_menu_widget.h"
+#include "gui/eject_menu_state.h"
 #include "imgui.h"
+#include "source/physical_cd_source.hpp"
 
 using namespace mycds::gui;
 
@@ -231,4 +235,61 @@ TEST_F(CdControlsWidgetTest, RenderCdDisplayInRecordingAndNormalModes) {
 
     ImGui::End();
     ImGui::Render();
+}
+
+TEST(FileBrowserStateTests, FiltersCueAndTocFilesAndNavigatesDirectories) {
+    const std::filesystem::path temp_root =
+        std::filesystem::temp_directory_path() / "mycds_file_browser_test";
+    std::error_code ec;
+    std::filesystem::remove_all(temp_root, ec);
+    std::filesystem::create_directories(temp_root / "subdir", ec);
+
+    { std::ofstream(temp_root / "album.cue") << "FILE \"album.bin\" BINARY\n"; }
+    { std::ofstream(temp_root / "disc.TOC") << "CD_DA\n"; }
+    { std::ofstream(temp_root / "notes.txt") << "ignored\n"; }
+    { std::ofstream(temp_root / "subdir" / "nested.cue") << "FILE \"n.bin\" BINARY\n"; }
+
+    FileBrowserState browser(temp_root);
+    EXPECT_EQ(browser.current_dir(), std::filesystem::weakly_canonical(temp_root));
+    EXPECT_TRUE(browser.error_message().empty());
+
+    // Should list 1 directory ("subdir") + 2 supported files ("album.cue", "disc.TOC")
+    ASSERT_EQ(browser.entries().size(), 3u);
+    EXPECT_TRUE(browser.entries()[0].isDirectory);
+    EXPECT_EQ(browser.entries()[0].name, "subdir");
+    EXPECT_FALSE(browser.entries()[1].isDirectory);
+    EXPECT_EQ(browser.entries()[1].name, "album.cue");
+    EXPECT_FALSE(browser.entries()[2].isDirectory);
+    EXPECT_EQ(browser.entries()[2].name, "disc.TOC");
+
+    // Selecting a file updates selected_file
+    browser.select_entry(1);
+    EXPECT_EQ(browser.selected_file().filename(), "album.cue");
+
+    // Activating a directory enters it and does not trigger load
+    EXPECT_FALSE(browser.activate_entry(0));
+    EXPECT_EQ(browser.current_dir().filename(), "subdir");
+    ASSERT_EQ(browser.entries().size(), 1u);
+    EXPECT_EQ(browser.entries()[0].name, "nested.cue");
+
+    // Activating a supported file returns true
+    EXPECT_TRUE(browser.activate_entry(0));
+    EXPECT_EQ(browser.selected_file().filename(), "nested.cue");
+
+    // Navigate up returns to temp_root
+    EXPECT_TRUE(browser.navigate_up());
+    EXPECT_EQ(browser.current_dir(), std::filesystem::weakly_canonical(temp_root));
+
+    // Enabling show_all_files includes notes.txt
+    browser.set_show_all_files(true);
+    EXPECT_EQ(browser.entries().size(), 4u);
+
+    std::filesystem::remove_all(temp_root, ec);
+}
+
+TEST(CdDriveEnumerationTests, EnumerateDrivesDoesNotThrow) {
+    const auto drives = mycds::enumerate_cd_drives();
+    for (const auto& drv : drives) {
+        EXPECT_FALSE(drv.devicePath.empty());
+    }
 }

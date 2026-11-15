@@ -2,6 +2,7 @@
 
 #include "domain/audio_format.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 #include <utility>
 
@@ -263,6 +264,88 @@ std::vector<std::byte> PhysicalCdSource::readAudioSectors(
 
 std::unique_ptr<DiscSource> open_physical_cd_source(const std::string& device_path) {
     return std::make_unique<PhysicalCdSource>(device_path);
+}
+
+namespace {
+
+std::string trim_ascii_whitespace(const char* text) {
+    if (!text) {
+        return {};
+    }
+    std::string s(text);
+    const auto not_space = [](unsigned char c) { return c != ' ' && c != '\t' && c != '\r' && c != '\n'; };
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), not_space));
+    s.erase(std::find_if(s.rbegin(), s.rend(), not_space).base(), s.end());
+    return s;
+}
+
+} // namespace
+
+std::vector<CdDriveInfo> enumerate_cd_drives() {
+    std::vector<CdDriveInfo> drives;
+    if (!cdio_init()) {
+        return drives;
+    }
+
+    char** devices = cdio_get_devices(DRIVER_DEVICE);
+    if (!devices) {
+        return drives;
+    }
+
+    for (std::size_t i = 0; devices[i] != nullptr; ++i) {
+        CdDriveInfo info;
+        info.devicePath = devices[i];
+
+        CdIo_t* cdio = cdio_open(devices[i], DRIVER_UNKNOWN);
+        if (!cdio) {
+            info.statusText = "Unable to open drive";
+            drives.push_back(std::move(info));
+            continue;
+        }
+
+        cdio_hwinfo_t hw{};
+        if (cdio_get_hwinfo(cdio, &hw)) {
+            info.vendor = trim_ascii_whitespace(hw.psz_vendor);
+            info.model = trim_ascii_whitespace(hw.psz_model);
+        }
+
+        const discmode_t disc_mode = cdio_get_discmode(cdio);
+        if (disc_mode == CDIO_DISC_MODE_NO_INFO || disc_mode == CDIO_DISC_MODE_ERROR) {
+            info.hasDisc = false;
+            info.statusText = "Empty Tray";
+        } else {
+            info.hasDisc = true;
+            const track_t first_track = cdio_get_first_track_num(cdio);
+            const track_t last_track = cdio_get_last_track_num(cdio);
+            if (first_track != CDIO_INVALID_TRACK && last_track != CDIO_INVALID_TRACK &&
+                first_track <= last_track) {
+                info.trackCount = static_cast<int>(last_track - first_track + 1);
+                const lba_t start_lba = cdio_get_track_lba(cdio, first_track);
+                const lba_t leadout_lba = cdio_get_track_lba(cdio, CDIO_CDROM_LEADOUT_TRACK);
+                if (start_lba != CDIO_INVALID_LBA && leadout_lba != CDIO_INVALID_LBA &&
+                    leadout_lba >= start_lba) {
+                    info.totalSeconds = static_cast<int>(
+                        (leadout_lba - start_lba) / AudioFormat::kSectorsPerSecond);
+                }
+                info.statusText = "Disc Ready";
+            } else {
+                info.statusText = "Unreadable TOC";
+            }
+        }
+
+        cdio_destroy(cdio);
+        drives.push_back(std::move(info));
+    }
+
+    cdio_free_device_list(devices);
+    return drives;
+}
+
+bool eject_cd_drive(const std::string& device_path) {
+    if (device_path.empty() || !cdio_init()) {
+        return false;
+    }
+    return cdio_eject_media_drive(device_path.c_str()) == DRIVER_OP_SUCCESS;
 }
 
 } // namespace mycds

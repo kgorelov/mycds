@@ -155,6 +155,7 @@ add_executable(mycds
     src/gui/cd_playlist_widget.cpp
     src/gui/cd_ui_style.cpp
     src/gui/cd_volume_meter_widget.cpp
+    src/gui/eject_menu_state.cpp
     src/gui/main.cpp
 )
 
@@ -331,6 +332,7 @@ if(GTest_FOUND)
         src/gui/cd_eject_menu_widget.cpp
         src/gui/cd_ui_style.cpp
         src/gui/cd_brushed_metal.cpp
+        src/gui/eject_menu_state.cpp
     )
     target_compile_options(cd_controls_widget_tests PRIVATE
         -Wall
@@ -342,6 +344,7 @@ if(GTest_FOUND)
         "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui"
     )
     target_link_libraries(cd_controls_widget_tests PRIVATE
+        mycds_core
         imgui
         OpenGL::GL
         GTest::gtest_main
