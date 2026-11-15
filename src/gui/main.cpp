@@ -8,6 +8,7 @@
 
 #include "cd_brushed_metal.h"
 #include "cd_controls_widget.h"
+#include "cd_cover_widget.h"
 #include "cd_display_model.h"
 #include "cd_display_widget.h"
 #include "cd_eject_menu_widget.h"
@@ -342,40 +343,45 @@ int main(int argc, char* argv[]) {
         if (display_model.is_eject_menu_open()) {
             mycds::gui::RenderEjectMenu(display_model, ImGui::GetContentRegionAvail());
         } else {
-            constexpr float widget_w = 680.0f;
-            constexpr float widget_h = 250.0f;
-            constexpr float playlist_w = 680.0f;
-            constexpr float playlist_h = 480.0f;
+            constexpr float kLeftColumnWidth = 680.0f;
+            constexpr float kDisplayHeight = 250.0f;
+            constexpr float kMeterHeight = 90.0f;
+            constexpr float kControlsHeight = 116.0f;
+            constexpr float kColumnGap = 24.0f;
+            constexpr float kMinCoverHeight = 140.0f;
 
-            const float avail_w = ImGui::GetContentRegionAvail().x;
-            const float total_panels_w = widget_w + 24.0f + playlist_w;
-            const float indent_x = (avail_w > total_panels_w) ? ((avail_w - total_panels_w) * 0.5f) : 0.0f;
+            const ImVec2 avail = ImGui::GetContentRegionAvail();
+            const float start_y = ImGui::GetCursorScreenPos().y;
 
-            if (indent_x > 0.0f) {
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent_x);
-            }
-
-            // Left Column: Main CD Player Display + Future Widgets Space + Transport Controls
+            // Left Column: Fixed width clinging to the left edge of the window
             ImGui::BeginGroup();
             {
                 // Phase 2.1: CD Player Display Widget
-                mycds::gui::RenderCdDisplay(display_model, ImVec2(widget_w, widget_h));
+                mycds::gui::RenderCdDisplay(display_model, ImVec2(kLeftColumnWidth, kDisplayHeight));
 
                 // Phase 2.3: LED volume indicator
-                mycds::gui::RenderCdVolumeMeter(display_model, ImVec2(widget_w, 90.0f));
+                mycds::gui::RenderCdVolumeMeter(display_model, ImVec2(kLeftColumnWidth, kMeterHeight));
 
                 // Phase 2.4: Controls Widget (Hardware buttons, backlit cyan pictograms, rotary knobs)
-                mycds::gui::RenderCdControls(display_model, ImVec2(widget_w, 116.0f));
+                mycds::gui::RenderCdControls(display_model, ImVec2(kLeftColumnWidth, kControlsHeight));
+
+                // Optional CD Cover block underneath controls when vertical space allows
+                const float used_left_h = ImGui::GetCursorScreenPos().y - start_y;
+                const float remaining_left_h = avail.y - used_left_h;
+                if (remaining_left_h >= kMinCoverHeight) {
+                    mycds::gui::RenderCdCoverWidget(display_model, ImVec2(kLeftColumnWidth, remaining_left_h));
+                }
             }
             ImGui::EndGroup();
 
-            ImGui::SameLine(0.0f, 24.0f);
+            ImGui::SameLine(0.0f, kColumnGap);
 
-            // Right Column: Phase 2.2 CD Playlist Widget
+            // Right Column: Dynamic Playlist spanning to the right and bottom of the window
             ImGui::BeginGroup();
             {
-                const float actual_playlist_w = std::max(playlist_w, avail_w - widget_w - 24.0f - indent_x);
-                mycds::gui::RenderCdPlaylist(display_model, ImVec2(actual_playlist_w, playlist_h));
+                const float actual_playlist_w = std::max(320.0f, avail.x - kLeftColumnWidth - kColumnGap);
+                const float actual_playlist_h = std::max(240.0f, avail.y);
+                mycds::gui::RenderCdPlaylist(display_model, ImVec2(actual_playlist_w, actual_playlist_h));
             }
             ImGui::EndGroup();
         }

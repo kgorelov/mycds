@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "gui/cd_controls_widget.h"
+#include "gui/cd_cover_widget.h"
 #include "gui/cd_display_model.h"
 #include "gui/cd_display_widget.h"
 #include "gui/cd_eject_menu_widget.h"
@@ -388,4 +389,23 @@ TEST(AppSettingsTests, PersistenceAndAutoPlayOnDiscLoad) {
     EXPECT_TRUE(model.is_playing());
 
     std::filesystem::remove_all(settings_path.parent_path(), ec);
+}
+
+TEST_F(CdControlsWidgetTest, RenderCdCoverWidgetHeadlessExecution) {
+    CdDisplayModel model;
+
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(1460, 800));
+    ImGui::Begin("TestWindowCover", nullptr, ImGuiWindowFlags_NoDecoration);
+
+    RenderCdCoverWidget(model, ImVec2(680.0f, 180.0f));
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ASSERT_NE(draw_list, nullptr);
+    EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
+    EXPECT_GT(draw_list->VtxBuffer.size(), 0);
+
+    ImGui::End();
+    ImGui::Render();
 }

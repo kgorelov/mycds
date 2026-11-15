@@ -29,8 +29,8 @@ constexpr ImU32 kChassisFrame = IM_COL32(28, 28, 32, 255);
 void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    const float widget_width = (user_size.x >= 680.0f) ? user_size.x : 680.0f;
-    const float widget_height = (user_size.y > 0.0f) ? user_size.y : 480.0f;
+    const float widget_width = (user_size.x > 0.0f) ? std::max(320.0f, user_size.x) : 680.0f;
+    const float widget_height = (user_size.y > 0.0f) ? std::max(240.0f, user_size.y) : 480.0f;
 
     const ImVec2 screen_pos = ImGui::GetCursorScreenPos();
     const ImVec2 display_end(screen_pos.x + widget_width, screen_pos.y + widget_height);
