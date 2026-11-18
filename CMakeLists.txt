@@ -89,6 +89,7 @@ target_include_directories(imgui PUBLIC
 target_link_libraries(imgui PUBLIC
     SDL3::SDL3
     OpenGL::GL
+    ${CMAKE_DL_LIBS}
 )
 
 # 4. Core library
