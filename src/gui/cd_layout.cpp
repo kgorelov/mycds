@@ -102,7 +102,7 @@ LayoutPlan compute_layout_plan(
                 plan.playlist_rect = LayoutRect{
                     origin_x,
                     origin_y + deck_h + LayoutConstants::kRowGap,
-                    std::max(avail_width, LayoutConstants::kDeckWidth),
+                    LayoutConstants::kDeckWidth,
                     avail_playlist_h_vert
                 };
             }

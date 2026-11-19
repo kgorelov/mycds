@@ -480,7 +480,7 @@ TEST(CdLayoutTests, ExplicitHorizontalAndVerticalAndVisibilityFlags) {
         const LayoutPlan plan = compute_layout_plan(0.0f, 0.0f, 1412.0f, 760.0f, settings);
         EXPECT_EQ(plan.resolved_layout, ResolvedLayout::Vertical);
         EXPECT_TRUE(plan.show_playlist);
-        EXPECT_FLOAT_EQ(plan.playlist_rect.width, 1412.0f);
+        EXPECT_FLOAT_EQ(plan.playlist_rect.width, LayoutConstants::kDeckWidth);
         EXPECT_FALSE(plan.show_cover);
     }
 
