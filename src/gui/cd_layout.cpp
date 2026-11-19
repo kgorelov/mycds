@@ -111,32 +111,14 @@ LayoutPlan compute_layout_plan(
 
     if (settings.show_cd_cover && plan.resolved_layout == ResolvedLayout::Horizontal) {
         const float remaining_h = avail_height - deck_h - LayoutConstants::kRowGap;
-        const float avail_cover_w = LayoutConstants::kDeckWidth;
-
-        if (avail_cover_w >= LayoutConstants::kMinCoverWidth &&
-            remaining_h >= LayoutConstants::kMinCoverHeight) {
-            float cover_h = remaining_h;
-            float cover_w = std::clamp(
-                avail_cover_w,
-                cover_h * LayoutConstants::kMinCoverAspectRatio,
-                cover_h * LayoutConstants::kMaxCoverAspectRatio);
-
-            if (avail_cover_w < cover_h * LayoutConstants::kMinCoverAspectRatio) {
-                cover_w = avail_cover_w;
-                cover_h = cover_w / LayoutConstants::kMinCoverAspectRatio;
-            }
-
-            if (cover_w >= LayoutConstants::kMinCoverWidth &&
-                cover_h >= LayoutConstants::kMinCoverHeight) {
-                plan.show_cover = true;
-                const float cover_x = origin_x + (LayoutConstants::kDeckWidth - cover_w) * 0.5f;
-                plan.cover_rect = LayoutRect{
-                    cover_x,
-                    origin_y + deck_h + LayoutConstants::kRowGap,
-                    cover_w,
-                    cover_h
-                };
-            }
+        if (remaining_h >= LayoutConstants::kMinCoverHeight) {
+            plan.show_cover = true;
+            plan.cover_rect = LayoutRect{
+                origin_x,
+                origin_y + deck_h + LayoutConstants::kRowGap,
+                LayoutConstants::kDeckWidth,
+                remaining_h
+            };
         }
     }
 

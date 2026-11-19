@@ -440,15 +440,15 @@ TEST(CdLayoutTests, DynamicLayoutTransitionsAcrossSizes) {
         EXPECT_FALSE(plan.show_cover);
     }
 
-    // Wide & tall window (1460x720 -> 1412x680 content): Horizontal + playlist + square-bounded cover
+    // Wide & tall window (1460x720 -> 1412x680 content): Horizontal + playlist + fixed-width cover canvas
     {
         const LayoutPlan plan = compute_layout_plan(0.0f, 0.0f, 1412.0f, 680.0f, settings);
         EXPECT_EQ(plan.resolved_layout, ResolvedLayout::Horizontal);
         EXPECT_TRUE(plan.show_playlist);
         EXPECT_TRUE(plan.show_cover);
-        const float aspect = plan.cover_rect.width / plan.cover_rect.height;
-        EXPECT_GE(aspect, LayoutConstants::kMinCoverAspectRatio);
-        EXPECT_LE(aspect, LayoutConstants::kMaxCoverAspectRatio);
+        EXPECT_FLOAT_EQ(plan.cover_rect.x, plan.display_rect.x);
+        EXPECT_FLOAT_EQ(plan.cover_rect.width, LayoutConstants::kDeckWidth);
+        EXPECT_GE(plan.cover_rect.height, LayoutConstants::kMinCoverHeight);
     }
 
     // Narrow & tall window (800x800 -> 752x760 content): Vertical + playlist below deck, no cover
