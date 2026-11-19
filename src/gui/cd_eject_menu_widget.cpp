@@ -800,6 +800,51 @@ void RenderSettingsScreen(CdDisplayModel& model) {
     }
     ImGui::TextDisabled("    Automatically start playing after loading a CD, image file, or library album.");
     ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::TextColored(ImVec4(0.78f, 0.82f, 0.88f, 1.0f),
+                       "Layout & Optional Widgets:");
+    ImGui::Spacing();
+
+    const char* layout_items[] = {"Dynamic (Auto)", "Horizontal", "Vertical"};
+    int layout_idx = 0;
+    switch (settings.layout_mode) {
+        case LayoutMode::Dynamic:
+            layout_idx = 0;
+            break;
+        case LayoutMode::Horizontal:
+            layout_idx = 1;
+            break;
+        case LayoutMode::Vertical:
+            layout_idx = 2;
+            break;
+    }
+    ImGui::SetNextItemWidth(220.0f);
+    if (ImGui::Combo("Layout", &layout_idx, layout_items, 3)) {
+        if (layout_idx == 0) {
+            settings.layout_mode = LayoutMode::Dynamic;
+        } else if (layout_idx == 1) {
+            settings.layout_mode = LayoutMode::Horizontal;
+        } else {
+            settings.layout_mode = LayoutMode::Vertical;
+        }
+        changed = true;
+    }
+    ImGui::TextDisabled("    Dynamic adapts between horizontal, vertical, and minimal based on window size.");
+    ImGui::Spacing();
+
+    if (ImGui::Checkbox("Show playlist", &settings.show_playlist)) {
+        changed = true;
+    }
+    ImGui::TextDisabled("    Display the track playlist when enough room is available.");
+    ImGui::Spacing();
+
+    if (ImGui::Checkbox("Show CD cover", &settings.show_cd_cover)) {
+        changed = true;
+    }
+    ImGui::TextDisabled("    Display the square CD cover under controls in horizontal layout when room allows.");
+    ImGui::Spacing();
 
     if (changed) {
         model.set_app_settings(settings);

@@ -10,6 +10,7 @@
 #include "gui/cd_display_model.h"
 #include "gui/cd_display_widget.h"
 #include "gui/cd_eject_menu_widget.h"
+#include "gui/cd_layout.h"
 #include "gui/eject_menu_state.h"
 #include "imgui.h"
 #include "source/physical_cd_source.hpp"
@@ -408,4 +409,108 @@ TEST_F(CdControlsWidgetTest, RenderCdCoverWidgetHeadlessExecution) {
 
     ImGui::End();
     ImGui::Render();
+}
+
+TEST(CdLayoutTests, MinimumWindowDimensionsCoverMandatoryWidgets) {
+    EXPECT_EQ(compute_min_window_width(), 728);
+    EXPECT_EQ(compute_min_window_height(), 504);
+
+    AppSettings settings;
+    const LayoutPlan plan = compute_layout_plan(24.0f, 20.0f, 680.0f, 464.0f, settings);
+    EXPECT_FLOAT_EQ(plan.display_rect.width, 680.0f);
+    EXPECT_FLOAT_EQ(plan.display_rect.height, 250.0f);
+    EXPECT_FLOAT_EQ(plan.meter_rect.width, 680.0f);
+    EXPECT_FLOAT_EQ(plan.meter_rect.height, 90.0f);
+    EXPECT_FLOAT_EQ(plan.controls_rect.width, 680.0f);
+    EXPECT_FLOAT_EQ(plan.controls_rect.height, 116.0f);
+    EXPECT_FALSE(plan.show_playlist);
+    EXPECT_FALSE(plan.show_cover);
+}
+
+TEST(CdLayoutTests, DynamicLayoutTransitionsAcrossSizes) {
+    AppSettings settings;
+    settings.layout_mode = LayoutMode::Dynamic;
+
+    // Default wide & short window (1460x532 -> 1412x492 content): Horizontal + playlist, no cover
+    {
+        const LayoutPlan plan = compute_layout_plan(0.0f, 0.0f, 1412.0f, 492.0f, settings);
+        EXPECT_EQ(plan.resolved_layout, ResolvedLayout::Horizontal);
+        EXPECT_TRUE(plan.show_playlist);
+        EXPECT_GE(plan.playlist_rect.width, LayoutConstants::kMinPlaylistWidth);
+        EXPECT_FALSE(plan.show_cover);
+    }
+
+    // Wide & tall window (1460x720 -> 1412x680 content): Horizontal + playlist + square-bounded cover
+    {
+        const LayoutPlan plan = compute_layout_plan(0.0f, 0.0f, 1412.0f, 680.0f, settings);
+        EXPECT_EQ(plan.resolved_layout, ResolvedLayout::Horizontal);
+        EXPECT_TRUE(plan.show_playlist);
+        EXPECT_TRUE(plan.show_cover);
+        const float aspect = plan.cover_rect.width / plan.cover_rect.height;
+        EXPECT_GE(aspect, LayoutConstants::kMinCoverAspectRatio);
+        EXPECT_LE(aspect, LayoutConstants::kMaxCoverAspectRatio);
+    }
+
+    // Narrow & tall window (800x800 -> 752x760 content): Vertical + playlist below deck, no cover
+    {
+        const LayoutPlan plan = compute_layout_plan(0.0f, 0.0f, 752.0f, 760.0f, settings);
+        EXPECT_EQ(plan.resolved_layout, ResolvedLayout::Vertical);
+        EXPECT_TRUE(plan.show_playlist);
+        EXPECT_GE(plan.playlist_rect.y, plan.controls_rect.y + plan.controls_rect.height);
+        EXPECT_GE(plan.playlist_rect.height, LayoutConstants::kMinPlaylistHeight);
+        EXPECT_FALSE(plan.show_cover);
+    }
+}
+
+TEST(CdLayoutTests, ExplicitHorizontalAndVerticalAndVisibilityFlags) {
+    AppSettings settings;
+
+    // Explicit Horizontal in narrow & tall window: stays Horizontal, hides playlist, shows cover
+    settings.layout_mode = LayoutMode::Horizontal;
+    {
+        const LayoutPlan plan = compute_layout_plan(0.0f, 0.0f, 752.0f, 760.0f, settings);
+        EXPECT_EQ(plan.resolved_layout, ResolvedLayout::Horizontal);
+        EXPECT_FALSE(plan.show_playlist);
+        EXPECT_TRUE(plan.show_cover);
+    }
+
+    // Explicit Vertical in wide & tall window: stays Vertical, places playlist below, hides cover
+    settings.layout_mode = LayoutMode::Vertical;
+    {
+        const LayoutPlan plan = compute_layout_plan(0.0f, 0.0f, 1412.0f, 760.0f, settings);
+        EXPECT_EQ(plan.resolved_layout, ResolvedLayout::Vertical);
+        EXPECT_TRUE(plan.show_playlist);
+        EXPECT_FLOAT_EQ(plan.playlist_rect.width, 1412.0f);
+        EXPECT_FALSE(plan.show_cover);
+    }
+
+    // Visibility flags disable optional widgets even when space permits
+    settings.layout_mode = LayoutMode::Dynamic;
+    settings.show_playlist = false;
+    settings.show_cd_cover = false;
+    {
+        const LayoutPlan plan = compute_layout_plan(0.0f, 0.0f, 1412.0f, 760.0f, settings);
+        EXPECT_FALSE(plan.show_playlist);
+        EXPECT_FALSE(plan.show_cover);
+    }
+}
+
+TEST(AppSettingsTests, LayoutAndVisibilityPersistence) {
+    const std::filesystem::path settings_path =
+        std::filesystem::temp_directory_path() / "mycds_layout_settings_test" / "settings.json";
+    std::error_code ec;
+    std::filesystem::remove_all(settings_path.parent_path(), ec);
+
+    AppSettings saved;
+    saved.layout_mode = LayoutMode::Vertical;
+    saved.show_playlist = false;
+    saved.show_cd_cover = true;
+    EXPECT_TRUE(save_app_settings(settings_path, saved));
+
+    const AppSettings loaded = load_app_settings(settings_path);
+    EXPECT_EQ(loaded.layout_mode, LayoutMode::Vertical);
+    EXPECT_FALSE(loaded.show_playlist);
+    EXPECT_TRUE(loaded.show_cd_cover);
+
+    std::filesystem::remove_all(settings_path.parent_path(), ec);
 }

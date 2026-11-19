@@ -25,6 +25,12 @@ enum class EjectMenuScreen {
     Settings
 };
 
+enum class LayoutMode {
+    Dynamic,
+    Horizontal,
+    Vertical
+};
+
 struct TrackInfo {
     int number{1};
     int duration_seconds{222};
@@ -41,6 +47,9 @@ struct VolumeLevels {
 struct AppSettings {
     bool play_when_started{true};
     bool auto_play_on_disc_load{true};
+    LayoutMode layout_mode{LayoutMode::Dynamic};
+    bool show_playlist{true};
+    bool show_cd_cover{true};
 };
 
 class CdDisplayModel {

@@ -154,6 +154,7 @@ add_executable(mycds
     src/gui/cd_display_model.cpp
     src/gui/cd_display_widget.cpp
     src/gui/cd_eject_menu_widget.cpp
+    src/gui/cd_layout.cpp
     src/gui/cd_playlist_widget.cpp
     src/gui/cd_ui_style.cpp
     src/gui/cd_volume_meter_widget.cpp
@@ -333,6 +334,7 @@ if(GTest_FOUND)
         src/gui/cd_display_widget.cpp
         src/gui/cd_display_model.cpp
         src/gui/cd_eject_menu_widget.cpp
+        src/gui/cd_layout.cpp
         src/gui/cd_ui_style.cpp
         src/gui/cd_brushed_metal.cpp
         src/gui/eject_menu_state.cpp

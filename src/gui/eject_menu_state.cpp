@@ -692,6 +692,33 @@ AppSettings load_app_settings(const std::filesystem::path& path) {
 
     settings.play_when_started = parse_bool_key("play_when_started", settings.play_when_started);
     settings.auto_play_on_disc_load = parse_bool_key("auto_play_on_disc_load", settings.auto_play_on_disc_load);
+    settings.show_playlist = parse_bool_key("show_playlist", settings.show_playlist);
+    settings.show_cd_cover = parse_bool_key("show_cd_cover", settings.show_cd_cover);
+
+    auto parse_layout_mode = [&](LayoutMode default_val) {
+        const auto pos = content.find("\"layout_mode\"");
+        if (pos == std::string::npos) {
+            return default_val;
+        }
+        const auto colon = content.find(':', pos);
+        if (colon == std::string::npos) {
+            return default_val;
+        }
+        const auto newline_pos = content.find('\n', colon);
+        const auto line_end = (newline_pos == std::string::npos) ? content.size() : newline_pos;
+        const std::string line = content.substr(colon, line_end - colon);
+        if (line.find("\"horizontal\"") != std::string::npos) {
+            return LayoutMode::Horizontal;
+        }
+        if (line.find("\"vertical\"") != std::string::npos) {
+            return LayoutMode::Vertical;
+        }
+        if (line.find("\"dynamic\"") != std::string::npos) {
+            return LayoutMode::Dynamic;
+        }
+        return default_val;
+    };
+    settings.layout_mode = parse_layout_mode(settings.layout_mode);
     return settings;
 }
 
@@ -709,9 +736,25 @@ bool save_app_settings(const std::filesystem::path& path, const AppSettings& set
         return false;
     }
 
+    const char* layout_str = "dynamic";
+    switch (settings.layout_mode) {
+        case LayoutMode::Dynamic:
+            layout_str = "dynamic";
+            break;
+        case LayoutMode::Horizontal:
+            layout_str = "horizontal";
+            break;
+        case LayoutMode::Vertical:
+            layout_str = "vertical";
+            break;
+    }
+
     out << "{\n"
         << "  \"play_when_started\": " << (settings.play_when_started ? "true" : "false") << ",\n"
-        << "  \"auto_play_on_disc_load\": " << (settings.auto_play_on_disc_load ? "true" : "false") << "\n"
+        << "  \"auto_play_on_disc_load\": " << (settings.auto_play_on_disc_load ? "true" : "false") << ",\n"
+        << "  \"layout_mode\": \"" << layout_str << "\",\n"
+        << "  \"show_playlist\": " << (settings.show_playlist ? "true" : "false") << ",\n"
+        << "  \"show_cd_cover\": " << (settings.show_cd_cover ? "true" : "false") << "\n"
         << "}\n";
     return out.good();
 }

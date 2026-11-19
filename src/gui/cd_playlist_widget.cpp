@@ -7,6 +7,7 @@
 #include <string>
 
 #include "cd_brushed_metal.h"
+#include "cd_layout.h"
 
 namespace mycds::gui {
 
@@ -29,8 +30,8 @@ constexpr ImU32 kChassisFrame = IM_COL32(28, 28, 32, 255);
 void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    const float widget_width = (user_size.x > 0.0f) ? std::max(320.0f, user_size.x) : 680.0f;
-    const float widget_height = (user_size.y > 0.0f) ? std::max(240.0f, user_size.y) : 480.0f;
+    const float widget_width = (user_size.x > 0.0f) ? std::max(LayoutConstants::kMinPlaylistWidth, user_size.x) : 680.0f;
+    const float widget_height = (user_size.y > 0.0f) ? std::max(LayoutConstants::kMinPlaylistHeight, user_size.y) : 480.0f;
 
     const ImVec2 screen_pos = ImGui::GetCursorScreenPos();
     const ImVec2 display_end(screen_pos.x + widget_width, screen_pos.y + widget_height);
@@ -98,24 +99,41 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
         const std::string& album = model.album_title();
 
         const float artist_x = glass_min.x + 16.0f;
-        draw_list->AddText(ImVec2(artist_x, header_y), kAmberLitCore, artist.c_str());
+        const float artist_max_x = summary_x - 12.0f;
+        if (artist_max_x > artist_x) {
+            draw_list->PushClipRect(ImVec2(artist_x, header_y),
+                                    ImVec2(artist_max_x, header_y + text_line_h), true);
+            draw_list->AddText(ImVec2(artist_x, header_y), kAmberLitCore, artist.c_str());
+            draw_list->PopClipRect();
+        }
 
         const float artist_w = ImGui::CalcTextSize(artist.c_str()).x;
         // Position album name in the space previously occupied by "TRACK PLAYLIST"
         const float album_x = std::max(glass_min.x + 250.0f, artist_x + artist_w + 20.0f);
         const float max_album_w = summary_x - album_x - 12.0f;
-        if (max_album_w > 0.0f) {
+        if (max_album_w > 24.0f) {
             draw_list->PushClipRect(ImVec2(album_x, header_y),
                                     ImVec2(summary_x - 12.0f, header_y + text_line_h), true);
             draw_list->AddText(ImVec2(album_x, header_y), kAmberLitCore, album.c_str());
             draw_list->PopClipRect();
         }
     } else {
-        draw_list->AddText(ImVec2(glass_min.x + 16.0f, header_y),
-                           IM_COL32(160, 110, 50, 180), "COMPACT DISC DIGITAL AUDIO");
+        const float cd_label_x = glass_min.x + 16.0f;
+        const float cd_label_max_x = summary_x - 12.0f;
+        if (cd_label_max_x > cd_label_x) {
+            draw_list->PushClipRect(ImVec2(cd_label_x, header_y),
+                                    ImVec2(cd_label_max_x, header_y + text_line_h), true);
+            draw_list->AddText(ImVec2(cd_label_x, header_y),
+                               IM_COL32(160, 110, 50, 180), "COMPACT DISC DIGITAL AUDIO");
+            draw_list->PopClipRect();
+        }
 
-        draw_list->AddText(ImVec2(glass_min.x + 250.0f, header_y),
-                           kAmberLitCore, "TRACK PLAYLIST");
+        const float playlist_title_x = glass_min.x + 250.0f;
+        const float playlist_title_w = ImGui::CalcTextSize("TRACK PLAYLIST").x;
+        if (summary_x - playlist_title_x >= playlist_title_w + 12.0f) {
+            draw_list->AddText(ImVec2(playlist_title_x, header_y),
+                               kAmberLitCore, "TRACK PLAYLIST");
+        }
     }
 
     // Column Headers
@@ -203,17 +221,25 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
         std::snprintf(num_buf, sizeof(num_buf), "%02d", track.number);
         child_draw_list->AddText(ImVec2(row_pos.x + 18.0f, text_y), text_col, num_buf);
 
-        // Track title: actual title when CDDB data is available, otherwise "Track 1 .. Track N"
-        const std::string title_text = model.track_display_title(track_idx);
-        child_draw_list->AddText(ImVec2(row_pos.x + 75.0f, text_y), text_col, title_text.c_str());
-
         // Track duration
         char time_buf[16];
         const int m = track.duration_seconds / 60;
         const int s = track.duration_seconds % 60;
         std::snprintf(time_buf, sizeof(time_buf), "%02d:%02d", m, s);
         const float time_w = ImGui::CalcTextSize(time_buf).x;
-        child_draw_list->AddText(ImVec2(row_end.x - time_w - 6.0f, text_y), text_col, time_buf);
+        const float time_x = row_end.x - time_w - 6.0f;
+        child_draw_list->AddText(ImVec2(time_x, text_y), text_col, time_buf);
+
+        // Track title: actual title when CDDB data is available, otherwise "Track 1 .. Track N"
+        const std::string title_text = model.track_display_title(track_idx);
+        const float title_x = row_pos.x + 75.0f;
+        const float title_max_x = time_x - 10.0f;
+        if (title_max_x > title_x) {
+            child_draw_list->PushClipRect(ImVec2(title_x, row_pos.y),
+                                          ImVec2(title_max_x, row_end.y), true);
+            child_draw_list->AddText(ImVec2(title_x, text_y), text_col, title_text.c_str());
+            child_draw_list->PopClipRect();
+        }
     }
 
     ImGui::EndChild();
