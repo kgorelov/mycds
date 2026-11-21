@@ -112,6 +112,111 @@ std::string FormatFileSize(std::uintmax_t bytes) {
     return std::string(buf);
 }
 
+std::string EllipsizeText(ImFont* font, float font_size, const std::string& text, float max_width) {
+    if (!font || text.empty() || max_width <= 0.0f) {
+        return text;
+    }
+    if (font->CalcTextSizeA(font_size, 10000.0f, 0.0f, text.c_str()).x <= max_width) {
+        return text;
+    }
+    const char* ellipsis = "...";
+    const float ellipsis_w = font->CalcTextSizeA(font_size, 10000.0f, 0.0f, ellipsis).x;
+    if (ellipsis_w >= max_width) {
+        return ellipsis;
+    }
+
+    std::size_t len = text.size();
+    while (len > 0) {
+        const std::string candidate = text.substr(0, len) + ellipsis;
+        if (font->CalcTextSizeA(font_size, 10000.0f, 0.0f, candidate.c_str()).x <= max_width) {
+            return candidate;
+        }
+        --len;
+    }
+    return ellipsis;
+}
+
+void DrawCenteredText(ImDrawList* draw_list, ImFont* font, float font_size,
+                      float box_x, float box_w, float y, ImU32 col, const std::string& text) {
+    if (!draw_list || !font || text.empty()) {
+        return;
+    }
+    const std::string fitted = EllipsizeText(font, font_size, text, box_w);
+    const ImVec2 sz = font->CalcTextSizeA(font_size, 10000.0f, 0.0f, fitted.c_str());
+    const float x = box_x + std::max(0.0f, (box_w - sz.x) * 0.5f);
+    draw_list->AddText(font, font_size, ImVec2(x, y), col, fitted.c_str());
+}
+
+void DrawCdRomDriveIcon(ImDrawList* draw_list, const ImVec2& center,
+                        bool has_disc, bool is_selected, bool hovered) {
+    if (!draw_list) {
+        return;
+    }
+
+    // Large optical disc positioned above/entering the drive bezel
+    const ImVec2 disc_center(center.x, center.y - 10.0f);
+    constexpr float kDiscRadius = 38.0f;
+
+    if (has_disc) {
+        const ImU32 disc_fill = is_selected
+            ? IM_COL32(36, 56, 68, 245)
+            : (hovered ? IM_COL32(44, 54, 66, 240) : IM_COL32(36, 42, 52, 235));
+        const ImU32 disc_rim = is_selected ? kColCyanGlowCore : (hovered ? kColCyanBright : IM_COL32(0, 195, 230, 210));
+
+        draw_list->AddCircleFilled(disc_center, kDiscRadius, disc_fill, 48);
+
+        // Specular sheen lines across the optical surface
+        const ImU32 sheen_col = is_selected ? IM_COL32(160, 245, 255, 70) : IM_COL32(140, 225, 245, 45);
+        draw_list->AddLine(ImVec2(disc_center.x - 24.0f, disc_center.y - 22.0f),
+                           ImVec2(disc_center.x - 8.0f, disc_center.y - 7.0f), sheen_col, 5.0f);
+        draw_list->AddLine(ImVec2(disc_center.x + 8.0f, disc_center.y + 7.0f),
+                           ImVec2(disc_center.x + 24.0f, disc_center.y + 22.0f), sheen_col, 5.0f);
+
+        draw_list->AddCircle(disc_center, kDiscRadius, disc_rim, 48, is_selected ? 2.0f : 1.6f);
+        draw_list->AddCircle(disc_center, kDiscRadius * 0.68f, IM_COL32(0, 185, 220, 85), 36, 1.0f);
+        draw_list->AddCircle(disc_center, kDiscRadius * 0.34f, IM_COL32(130, 215, 235, 160), 28, 1.2f);
+    } else {
+        // Dimmed/ghosted disc silhouette for empty drives
+        draw_list->AddCircleFilled(disc_center, kDiscRadius, IM_COL32(22, 25, 30, 185), 48);
+        draw_list->AddCircle(disc_center, kDiscRadius, IM_COL32(82, 90, 104, 130), 48, 1.4f);
+        draw_list->AddCircle(disc_center, kDiscRadius * 0.68f, IM_COL32(65, 72, 84, 70), 36, 1.0f);
+        draw_list->AddCircle(disc_center, kDiscRadius * 0.34f, IM_COL32(82, 90, 104, 110), 28, 1.1f);
+    }
+
+    // Center spindle hole
+    draw_list->AddCircleFilled(disc_center, kDiscRadius * 0.14f, kColSocketBg, 20);
+    draw_list->AddCircle(disc_center, kDiscRadius * 0.14f,
+                         has_disc ? IM_COL32(130, 220, 240, 180) : IM_COL32(85, 92, 104, 140), 20, 1.1f);
+
+    // Optical drive front bezel / tray unit overlapping the bottom of the disc
+    const ImVec2 drive_min(center.x - 46.0f, center.y + 20.0f);
+    const ImVec2 drive_max(center.x + 46.0f, center.y + 44.0f);
+    DrawHardwareButtonSocket(draw_list,
+                             ImVec2(drive_min.x - 2.0f, drive_min.y - 2.0f),
+                             ImVec2(drive_max.x + 2.0f, drive_max.y + 2.0f));
+    DrawButtonBrushedFace(draw_list, drive_min, drive_max, hovered, false);
+
+    // Recessed disc tray slot
+    draw_list->AddRectFilled(ImVec2(drive_min.x + 8.0f, drive_min.y + 6.0f),
+                             ImVec2(drive_max.x - 8.0f, drive_min.y + 10.0f),
+                             IM_COL32(10, 12, 15, 255), 1.5f);
+
+    // Drive status LED on bottom-left of bezel
+    const ImVec2 led_pos(drive_min.x + 13.0f, drive_max.y - 7.0f);
+    if (has_disc) {
+        draw_list->AddCircleFilled(led_pos, 4.5f, IM_COL32(45, 230, 100, 65), 12);
+        draw_list->AddCircleFilled(led_pos, 2.3f, IM_COL32(70, 245, 120, 255), 12);
+    } else {
+        draw_list->AddCircleFilled(led_pos, 2.2f, IM_COL32(95, 102, 114, 190), 12);
+    }
+
+    // Small eject button detail on bottom-right of bezel
+    const ImVec2 ej_min(drive_max.x - 19.0f, drive_max.y - 9.0f);
+    const ImVec2 ej_max(drive_max.x - 9.0f, drive_max.y - 5.0f);
+    draw_list->AddRectFilled(ej_min, ej_max, IM_COL32(44, 48, 56, 255), 1.0f);
+    draw_list->AddRect(ej_min, ej_max, IM_COL32(120, 128, 142, 160), 1.0f);
+}
+
 void RenderCdLoadScreen(CdDisplayModel& model) {
     struct CdScreenState {
         bool initialized{false};
@@ -126,6 +231,18 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
         state.drives = mycds::enumerate_cd_drives();
         if (state.selected_index >= static_cast<int>(state.drives.size())) {
             state.selected_index = 0;
+        }
+    };
+
+    auto load_drive = [&](const mycds::CdDriveInfo& drv) {
+        try {
+            mycds::PhysicalCdSource source(drv.devicePath);
+            LoadDiscSourceIntoModel(source, model);
+            state.status_message.clear();
+            state.status_is_error = false;
+        } catch (const std::exception& ex) {
+            state.status_message = std::string("Failed to load CD: ") + ex.what();
+            state.status_is_error = true;
         }
     };
 
@@ -147,8 +264,8 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
     ImGui::SetCursorScreenPos(ImVec2(refresh_pos.x, refresh_pos.y + 42.0f));
     ImGui::Dummy(ImVec2(1.0f, 4.0f));
 
-    // Recessed drive list area
-    const float list_height = std::max(140.0f, ImGui::GetContentRegionAvail().y - 90.0f);
+    // Recessed drive icons grid area
+    const float list_height = std::max(180.0f, ImGui::GetContentRegionAvail().y - 90.0f);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
     ImGui::BeginChild("##CdDriveList", ImVec2(0.0f, list_height), true);
     {
@@ -158,30 +275,116 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
                                "No optical CD drives detected on this system.");
             ImGui::TextDisabled("Connect a drive or click 'Refresh Drives' to scan again.");
         } else {
+            constexpr float kCardWidth = 192.0f;
+            constexpr float kCardHeight = 186.0f;
+            constexpr float kCardGap = 16.0f;
+            constexpr float kGridPad = 12.0f;
+
+            const float avail_w = ImGui::GetContentRegionAvail().x;
+            const int cols = std::max(
+                1,
+                static_cast<int>((avail_w - 2.0f * kGridPad + kCardGap) / (kCardWidth + kCardGap))
+            );
+            const ImVec2 grid_origin = ImGui::GetCursorPos();
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImFont* font = ImGui::GetFont();
+            const float base_font_sz = ImGui::GetFontSize();
+
             for (int i = 0; i < static_cast<int>(state.drives.size()); ++i) {
                 const auto& drv = state.drives[static_cast<std::size_t>(i)];
                 const bool is_selected = (state.selected_index == i);
+                const int col = i % cols;
+                const int row = i / cols;
 
-                std::string label = drv.devicePath;
-                if (!drv.vendor.empty() || !drv.model.empty()) {
-                    label += "  [" + drv.vendor + (drv.vendor.empty() || drv.model.empty() ? "" : " ") + drv.model + "]";
-                }
+                ImGui::SetCursorPos(ImVec2(
+                    grid_origin.x + kGridPad + static_cast<float>(col) * (kCardWidth + kCardGap),
+                    grid_origin.y + kGridPad + static_cast<float>(row) * (kCardHeight + kCardGap)
+                ));
 
-                if (ImGui::Selectable(label.c_str(), is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                const ImVec2 card_min = ImGui::GetCursorScreenPos();
+                const ImVec2 card_max(card_min.x + kCardWidth, card_min.y + kCardHeight);
+
+                ImGui::PushID(i);
+                ImGui::InvisibleButton("##DriveIconCard", ImVec2(kCardWidth, kCardHeight));
+                const bool hovered = ImGui::IsItemHovered();
+                const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+                const bool double_clicked = hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+                ImGui::PopID();
+
+                if (clicked) {
                     state.selected_index = i;
                     state.status_message.clear();
                     state.status_is_error = false;
                 }
+                if (double_clicked && drv.hasDisc) {
+                    state.selected_index = i;
+                    load_drive(drv);
+                }
 
-                ImGui::SameLine();
+                // Card background and selection frame
+                const ImU32 card_bg = is_selected
+                    ? IM_COL32(20, 30, 38, 240)
+                    : (hovered ? IM_COL32(24, 28, 34, 230) : IM_COL32(16, 18, 22, 220));
+                draw_list->AddRectFilled(card_min, card_max, card_bg, 6.0f);
+
+                if (is_selected) {
+                    DrawDiffusedRectOutline(draw_list, card_min, card_max, 6.0f, kColCyanBright, 1.5f, true);
+                } else {
+                    const ImU32 border_col = hovered ? IM_COL32(95, 115, 135, 180) : IM_COL32(48, 52, 60, 160);
+                    draw_list->AddRect(card_min, card_max, border_col, 6.0f, 0, 1.0f);
+                }
+
+                // Big CD-ROM icon in upper section of card
+                const ImVec2 icon_center(card_min.x + kCardWidth * 0.5f, card_min.y + 62.0f);
+                DrawCdRomDriveIcon(draw_list, icon_center, drv.hasDisc, is_selected, hovered);
+
+                // Device name and details underneath the icon
+                const float text_box_x = card_min.x + 10.0f;
+                const float text_box_w = kCardWidth - 20.0f;
+
+                const ImU32 dev_col = is_selected ? kColCyanGlowCore : IM_COL32(226, 232, 242, 255);
+                DrawCenteredText(draw_list, font, base_font_sz * 1.08f,
+                                 text_box_x, text_box_w, card_min.y + 116.0f,
+                                 dev_col, drv.devicePath);
+
+                std::string hw_name = drv.vendor;
+                if (!drv.model.empty()) {
+                    if (!hw_name.empty()) {
+                        hw_name += ' ';
+                    }
+                    hw_name += drv.model;
+                }
+                if (!hw_name.empty()) {
+                    DrawCenteredText(draw_list, font, base_font_sz * 0.90f,
+                                     text_box_x, text_box_w, card_min.y + 138.0f,
+                                     IM_COL32(150, 160, 175, 230), hw_name);
+                }
+
                 if (drv.hasDisc) {
                     const std::string dur = FormatDurationMmSs(drv.totalSeconds);
-                    ImGui::TextColored(ImVec4(0.25f, 0.90f, 0.40f, 1.0f),
-                                       "  [%s: %d tracks, %s]",
-                                       drv.statusText.c_str(), drv.trackCount, dur.c_str());
+                    char disc_summary[64];
+                    std::snprintf(disc_summary, sizeof(disc_summary), "%d tracks  %s",
+                                  drv.trackCount, dur.c_str());
+                    DrawCenteredText(draw_list, font, base_font_sz * 0.92f,
+                                     text_box_x, text_box_w, card_min.y + 159.0f,
+                                     IM_COL32(64, 230, 102, 255), disc_summary);
                 } else {
-                    ImGui::TextColored(ImVec4(0.58f, 0.62f, 0.68f, 1.0f),
-                                       "  [%s]", drv.statusText.c_str());
+                    DrawCenteredText(draw_list, font, base_font_sz * 0.90f,
+                                     text_box_x, text_box_w, card_min.y + 159.0f,
+                                     IM_COL32(130, 138, 150, 220), drv.statusText);
+                }
+
+                if (hovered) {
+                    std::string tip = drv.devicePath;
+                    if (!hw_name.empty()) {
+                        tip += "\n" + hw_name;
+                    }
+                    tip += "\nStatus: " + drv.statusText;
+                    if (drv.hasDisc) {
+                        tip += " (" + std::to_string(drv.trackCount) + " tracks, " +
+                               FormatDurationMmSs(drv.totalSeconds) + ")";
+                    }
+                    ImGui::SetTooltip("%s", tip.c_str());
                 }
             }
         }
@@ -207,16 +410,7 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
 
     const ImVec2 btn_row_pos = ImGui::GetCursorScreenPos();
     if (RenderHardwareTextButton("##BtnLoadCd", "Load Disc", btn_row_pos, ImVec2(160.0f, 38.0f), false, can_load)) {
-        const auto& drv = state.drives[static_cast<std::size_t>(state.selected_index)];
-        try {
-            mycds::PhysicalCdSource source(drv.devicePath);
-            LoadDiscSourceIntoModel(source, model);
-            state.status_message.clear();
-            state.status_is_error = false;
-        } catch (const std::exception& ex) {
-            state.status_message = std::string("Failed to load CD: ") + ex.what();
-            state.status_is_error = true;
-        }
+        load_drive(state.drives[static_cast<std::size_t>(state.selected_index)]);
     }
 
     if (RenderHardwareTextButton("##BtnEjectTray", "Eject Tray",
