@@ -505,12 +505,41 @@ TEST(AppSettingsTests, LayoutAndVisibilityPersistence) {
     saved.layout_mode = LayoutMode::Vertical;
     saved.show_playlist = false;
     saved.show_cd_cover = true;
+    saved.file_browser_view = FileBrowserViewMode::Icons;
     EXPECT_TRUE(save_app_settings(settings_path, saved));
 
     const AppSettings loaded = load_app_settings(settings_path);
     EXPECT_EQ(loaded.layout_mode, LayoutMode::Vertical);
     EXPECT_FALSE(loaded.show_playlist);
     EXPECT_TRUE(loaded.show_cd_cover);
+    EXPECT_EQ(loaded.file_browser_view, FileBrowserViewMode::Icons);
 
     std::filesystem::remove_all(settings_path.parent_path(), ec);
+}
+
+TEST_F(CdControlsWidgetTest, RenderImageFileScreenBothViewModesHeadless) {
+    CdDisplayModel model;
+    model.open_eject_menu();
+    model.set_active_eject_screen(EjectMenuScreen::ImageFile);
+
+    for (FileBrowserViewMode mode : {FileBrowserViewMode::List, FileBrowserViewMode::Icons}) {
+        AppSettings settings = model.app_settings();
+        settings.file_browser_view = mode;
+        model.set_app_settings(settings);
+
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImVec2(1460, 600));
+        ImGui::Begin("TestWindow", nullptr, ImGuiWindowFlags_NoDecoration);
+
+        RenderEjectMenu(model, ImVec2(1412.0f, 560.0f));
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        ASSERT_NE(draw_list, nullptr);
+        EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
+        EXPECT_GT(draw_list->VtxBuffer.size(), 0);
+
+        ImGui::End();
+        ImGui::Render();
+    }
 }

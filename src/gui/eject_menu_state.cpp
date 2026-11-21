@@ -719,6 +719,28 @@ AppSettings load_app_settings(const std::filesystem::path& path) {
         return default_val;
     };
     settings.layout_mode = parse_layout_mode(settings.layout_mode);
+
+    auto parse_file_browser_view = [&](FileBrowserViewMode default_val) {
+        const auto pos = content.find("\"file_browser_view\"");
+        if (pos == std::string::npos) {
+            return default_val;
+        }
+        const auto colon = content.find(':', pos);
+        if (colon == std::string::npos) {
+            return default_val;
+        }
+        const auto newline_pos = content.find('\n', colon);
+        const auto line_end = (newline_pos == std::string::npos) ? content.size() : newline_pos;
+        const std::string line = content.substr(colon, line_end - colon);
+        if (line.find("\"icons\"") != std::string::npos) {
+            return FileBrowserViewMode::Icons;
+        }
+        if (line.find("\"list\"") != std::string::npos) {
+            return FileBrowserViewMode::List;
+        }
+        return default_val;
+    };
+    settings.file_browser_view = parse_file_browser_view(settings.file_browser_view);
     return settings;
 }
 
@@ -749,12 +771,16 @@ bool save_app_settings(const std::filesystem::path& path, const AppSettings& set
             break;
     }
 
+    const char* browser_view_str =
+        (settings.file_browser_view == FileBrowserViewMode::Icons) ? "icons" : "list";
+
     out << "{\n"
         << "  \"play_when_started\": " << (settings.play_when_started ? "true" : "false") << ",\n"
         << "  \"auto_play_on_disc_load\": " << (settings.auto_play_on_disc_load ? "true" : "false") << ",\n"
         << "  \"layout_mode\": \"" << layout_str << "\",\n"
         << "  \"show_playlist\": " << (settings.show_playlist ? "true" : "false") << ",\n"
-        << "  \"show_cd_cover\": " << (settings.show_cd_cover ? "true" : "false") << "\n"
+        << "  \"show_cd_cover\": " << (settings.show_cd_cover ? "true" : "false") << ",\n"
+        << "  \"file_browser_view\": \"" << browser_view_str << "\"\n"
         << "}\n";
     return out.good();
 }

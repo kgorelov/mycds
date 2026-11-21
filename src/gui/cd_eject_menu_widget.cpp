@@ -1,6 +1,7 @@
 #include "cd_eject_menu_widget.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -432,14 +433,203 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
     ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }
 
+enum class NavButtonIcon {
+    Home,
+    Root,
+    Up,
+    Refresh,
+    ViewList,
+    ViewIcons
+};
+
+void DrawNavButtonIcon(ImDrawList* draw_list, const ImVec2& center, NavButtonIcon icon,
+                       ImU32 col, bool is_bright) {
+    if (!draw_list) {
+        return;
+    }
+    const float t = 1.8f;
+    switch (icon) {
+        case NavButtonIcon::Home: {
+            // Roof chevron + house body
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 8.5f, center.y - 0.5f),
+                             ImVec2(center.x, center.y - 8.0f), col, t, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x, center.y - 8.0f),
+                             ImVec2(center.x + 8.5f, center.y - 0.5f), col, t, is_bright);
+            DrawDiffusedRectOutline(draw_list, ImVec2(center.x - 5.5f, center.y - 0.5f),
+                                    ImVec2(center.x + 5.5f, center.y + 7.5f), 1.0f, col, 1.5f, is_bright);
+            break;
+        }
+        case NavButtonIcon::Root: {
+            // Forward slash "/" with subtle base bar
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 4.0f, center.y + 7.5f),
+                             ImVec2(center.x + 4.5f, center.y - 7.5f), col, 2.2f, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 7.0f, center.y + 7.5f),
+                             ImVec2(center.x + 7.0f, center.y + 7.5f), col, 1.3f, is_bright);
+            break;
+        }
+        case NavButtonIcon::Up: {
+            // Upward arrow
+            DrawDiffusedLine(draw_list, ImVec2(center.x, center.y + 7.0f),
+                             ImVec2(center.x, center.y - 5.5f), col, t, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 5.5f, center.y - 0.5f),
+                             ImVec2(center.x, center.y - 6.5f), col, t, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x + 5.5f, center.y - 0.5f),
+                             ImVec2(center.x, center.y - 6.5f), col, t, is_bright);
+            break;
+        }
+        case NavButtonIcon::Refresh: {
+            // Circular arc + arrowhead
+            constexpr float kR = 6.8f;
+            constexpr float kStart = 0.35f;
+            constexpr float kEnd = 5.15f;
+            draw_list->PathClear();
+            draw_list->PathArcTo(center, kR, kStart, kEnd, 18);
+            draw_list->PathStroke(col, ImDrawFlags_None, 1.8f);
+            const ImVec2 tip(center.x + std::cos(kEnd) * kR, center.y + std::sin(kEnd) * kR);
+            DrawDiffusedTriangle(draw_list,
+                                 ImVec2(tip.x + 3.5f, tip.y + 1.0f),
+                                 ImVec2(tip.x - 2.5f, tip.y - 3.5f),
+                                 ImVec2(tip.x - 2.0f, tip.y + 3.5f),
+                                 col, is_bright);
+            break;
+        }
+        case NavButtonIcon::ViewList: {
+            for (int row = -1; row <= 1; ++row) {
+                const float y = center.y + static_cast<float>(row) * 5.0f;
+                draw_list->AddRectFilled(ImVec2(center.x - 8.0f, y - 1.2f),
+                                         ImVec2(center.x - 5.5f, y + 1.2f), col);
+                DrawDiffusedLine(draw_list, ImVec2(center.x - 3.0f, y),
+                                 ImVec2(center.x + 8.0f, y), col, 1.6f, is_bright);
+            }
+            break;
+        }
+        case NavButtonIcon::ViewIcons: {
+            const float s = 5.2f;
+            const float g = 2.0f;
+            for (int r = 0; r < 2; ++r) {
+                for (int c = 0; c < 2; ++c) {
+                    const float x0 = center.x - s - g * 0.5f + static_cast<float>(c) * (s + g);
+                    const float y0 = center.y - s - g * 0.5f + static_cast<float>(r) * (s + g);
+                    DrawDiffusedRectOutline(draw_list, ImVec2(x0, y0), ImVec2(x0 + s, y0 + s),
+                                            1.0f, col, 1.4f, is_bright);
+                }
+            }
+            break;
+        }
+    }
+}
+
+bool RenderHardwareIconButton(const char* str_id, const ImVec2& pos, const ImVec2& size,
+                              NavButtonIcon icon, const char* tooltip,
+                              bool is_active = false, bool enabled = true) {
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    ImGui::SetCursorScreenPos(pos);
+    ImGui::InvisibleButton(str_id, size);
+    const bool hovered = enabled && ImGui::IsItemHovered();
+    const bool pressed = enabled && ImGui::IsItemActive();
+
+    const ImVec2 socket_min(pos.x - 2.0f, pos.y - 2.0f);
+    const ImVec2 socket_max(pos.x + size.x + 2.0f, pos.y + size.y + 2.0f);
+    DrawHardwareButtonSocket(draw_list, socket_min, socket_max);
+
+    const ImVec2 offset = pressed ? ImVec2(1.5f, 1.5f) : ImVec2(0.0f, 0.0f);
+    const ImVec2 b_min(pos.x + offset.x, pos.y + offset.y);
+    const ImVec2 b_max(pos.x + size.x + offset.x, pos.y + size.y + offset.y);
+    DrawButtonBrushedFace(draw_list, b_min, b_max, hovered, pressed);
+
+    const ImU32 icon_col = !enabled
+        ? IM_COL32(90, 96, 106, 160)
+        : ((is_active || pressed)
+            ? kColCyanGlowCore
+            : (hovered ? kColCyanBright : IM_COL32(110, 210, 235, 235)));
+    const ImVec2 center((b_min.x + b_max.x) * 0.5f, (b_min.y + b_max.y) * 0.5f);
+    DrawNavButtonIcon(draw_list, center, icon, icon_col, enabled && (is_active || hovered || pressed));
+
+    if (tooltip && ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s", tooltip);
+    }
+    return enabled && ImGui::IsItemClicked(ImGuiMouseButton_Left);
+}
+
+void DrawBrowserEntryIcon(ImDrawList* draw_list, const ImVec2& center,
+                          bool is_parent, bool is_dir, bool is_image,
+                          bool is_selected, bool hovered) {
+    if (!draw_list) {
+        return;
+    }
+
+    if (is_parent || is_dir) {
+        const ImU32 fill_col = is_parent
+            ? IM_COL32(36, 52, 66, 235)
+            : IM_COL32(62, 50, 24, 235);
+        const ImU32 rim_col = is_parent
+            ? (is_selected ? kColCyanGlowCore : IM_COL32(100, 200, 235, 220))
+            : (is_selected ? kColCyanGlowCore : (hovered ? IM_COL32(250, 205, 95, 240) : IM_COL32(230, 180, 72, 220)));
+
+        // Folder tab + body
+        const ImVec2 tab_min(center.x - 24.0f, center.y - 18.0f);
+        const ImVec2 tab_max(center.x - 4.0f, center.y - 11.0f);
+        draw_list->AddRectFilled(tab_min, tab_max, fill_col, 3.0f, ImDrawFlags_RoundCornersTop);
+        draw_list->AddRect(tab_min, tab_max, rim_col, 3.0f, ImDrawFlags_RoundCornersTop, 1.4f);
+
+        const ImVec2 body_min(center.x - 24.0f, center.y - 12.0f);
+        const ImVec2 body_max(center.x + 24.0f, center.y + 18.0f);
+        draw_list->AddRectFilled(body_min, body_max, fill_col, 4.0f);
+        draw_list->AddRect(body_min, body_max, rim_col, 4.0f, 0, is_selected ? 2.0f : 1.5f);
+
+        if (is_parent) {
+            // Upward arrow inside parent folder
+            DrawDiffusedLine(draw_list, ImVec2(center.x, center.y + 10.0f),
+                             ImVec2(center.x, center.y - 3.0f), rim_col, 2.0f, is_selected);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 6.0f, center.y + 2.0f),
+                             ImVec2(center.x, center.y - 4.0f), rim_col, 2.0f, is_selected);
+            DrawDiffusedLine(draw_list, ImVec2(center.x + 6.0f, center.y + 2.0f),
+                             ImVec2(center.x, center.y - 4.0f), rim_col, 2.0f, is_selected);
+        }
+        return;
+    }
+
+    if (is_image) {
+        // Optical disc icon for .cue / .toc images
+        constexpr float kR = 22.0f;
+        const ImU32 rim = is_selected ? kColCyanGlowCore : (hovered ? kColCyanBright : IM_COL32(0, 200, 235, 220));
+        draw_list->AddCircleFilled(center, kR, IM_COL32(30, 48, 60, 240), 36);
+        draw_list->AddLine(ImVec2(center.x - 13.0f, center.y - 12.0f),
+                           ImVec2(center.x - 4.0f, center.y - 4.0f), IM_COL32(150, 240, 255, 65), 3.5f);
+        draw_list->AddLine(ImVec2(center.x + 4.0f, center.y + 4.0f),
+                           ImVec2(center.x + 13.0f, center.y + 12.0f), IM_COL32(150, 240, 255, 65), 3.5f);
+        draw_list->AddCircle(center, kR, rim, 36, is_selected ? 2.0f : 1.6f);
+        draw_list->AddCircle(center, kR * 0.65f, IM_COL32(0, 180, 215, 90), 28, 1.0f);
+        draw_list->AddCircle(center, kR * 0.32f, IM_COL32(140, 220, 240, 170), 20, 1.1f);
+        draw_list->AddCircleFilled(center, kR * 0.14f, kColSocketBg, 16);
+        return;
+    }
+
+    // Generic file document icon with folded corner
+    const ImVec2 doc_min(center.x - 16.0f, center.y - 21.0f);
+    const ImVec2 doc_max(center.x + 16.0f, center.y + 21.0f);
+    const ImU32 rim = is_selected ? kColCyanGlowCore : IM_COL32(130, 140, 155, 190);
+    draw_list->AddRectFilled(doc_min, doc_max, IM_COL32(28, 32, 38, 225), 3.0f);
+    draw_list->AddRect(doc_min, doc_max, rim, 3.0f, 0, is_selected ? 1.8f : 1.3f);
+    draw_list->AddLine(ImVec2(doc_min.x + 6.0f, center.y - 6.0f),
+                     ImVec2(doc_max.x - 6.0f, center.y - 6.0f), IM_COL32(120, 130, 145, 150), 1.4f);
+    draw_list->AddLine(ImVec2(doc_min.x + 6.0f, center.y + 1.0f),
+                     ImVec2(doc_max.x - 6.0f, center.y + 1.0f), IM_COL32(120, 130, 145, 150), 1.4f);
+    draw_list->AddLine(ImVec2(doc_min.x + 6.0f, center.y + 8.0f),
+                     ImVec2(doc_max.x - 10.0f, center.y + 8.0f), IM_COL32(120, 130, 145, 150), 1.4f);
+}
+
 void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
     static FileBrowserState browser;
     static char path_buf[512] = "";
     static std::filesystem::path synced_dir;
+    static bool parent_selected = false;
 
     if (synced_dir != browser.current_dir()) {
         synced_dir = browser.current_dir();
         std::snprintf(path_buf, sizeof(path_buf), "%s", synced_dir.string().c_str());
+        parent_selected = false;
     }
 
     auto try_load_selected = [&](const std::filesystem::path& file_path) {
@@ -452,40 +642,83 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
         }
     };
 
-    // Navigation bar: Home, Root, Up, Refresh, Show all files, and right-aligned Load Image
+    const bool has_parent = browser.current_dir().has_parent_path() &&
+        browser.current_dir().parent_path() != browser.current_dir();
+    AppSettings settings = model.app_settings();
+    const bool is_icon_view = (settings.file_browser_view == FileBrowserViewMode::Icons);
+
+    // Navigation bar: Load Image (first on left), Home, Root, Up, Refresh, View Toggle, Show all files
     const float avail_w = ImGui::GetContentRegionAvail().x;
     const ImVec2 nav_pos = ImGui::GetCursorScreenPos();
-    if (RenderHardwareTextButton("##ImgHome", "Home", nav_pos, ImVec2(80.0f, 32.0f))) {
+    const bool can_load = !browser.selected_file().empty();
+    constexpr float kLoadBtnW = 142.0f;
+    constexpr float kIconBtnW = 36.0f;
+    constexpr float kIconBtnH = 32.0f;
+    constexpr float kIconGap = 6.0f;
+
+    float cur_x = nav_pos.x;
+    if (RenderHardwareTextButton("##BtnLoadImage", "Load Image",
+                                 ImVec2(cur_x, nav_pos.y), ImVec2(kLoadBtnW, kIconBtnH),
+                                 false, can_load)) {
+        try_load_selected(browser.selected_file());
+    }
+    cur_x += kLoadBtnW + 12.0f;
+
+    if (RenderHardwareIconButton("##ImgHome", ImVec2(cur_x, nav_pos.y),
+                                 ImVec2(kIconBtnW, kIconBtnH), NavButtonIcon::Home, "Home directory")) {
         if (const char* home = std::getenv("HOME")) {
             browser.navigate_to(home);
+            parent_selected = false;
         }
         ImGui::SetWindowFocus("##ImageBrowserList");
     }
-    if (RenderHardwareTextButton("##ImgRoot", "Root", ImVec2(nav_pos.x + 88.0f, nav_pos.y), ImVec2(80.0f, 32.0f))) {
-        browser.navigate_to("/");
-        ImGui::SetWindowFocus("##ImageBrowserList");
-    }
-    if (RenderHardwareTextButton("##ImgUp", "Up ..", ImVec2(nav_pos.x + 176.0f, nav_pos.y), ImVec2(80.0f, 32.0f))) {
-        browser.navigate_up();
-        ImGui::SetWindowFocus("##ImageBrowserList");
-    }
-    if (RenderHardwareTextButton("##ImgRefresh", "Refresh", ImVec2(nav_pos.x + 264.0f, nav_pos.y), ImVec2(92.0f, 32.0f))) {
-        browser.refresh();
-        ImGui::SetWindowFocus("##ImageBrowserList");
-    }
+    cur_x += kIconBtnW + kIconGap;
 
-    ImGui::SetCursorScreenPos(ImVec2(nav_pos.x + 368.0f, nav_pos.y + 5.0f));
+    if (RenderHardwareIconButton("##ImgRoot", ImVec2(cur_x, nav_pos.y),
+                                 ImVec2(kIconBtnW, kIconBtnH), NavButtonIcon::Root, "Root (/)")) {
+        browser.navigate_to("/");
+        parent_selected = false;
+        ImGui::SetWindowFocus("##ImageBrowserList");
+    }
+    cur_x += kIconBtnW + kIconGap;
+
+    if (RenderHardwareIconButton("##ImgUp", ImVec2(cur_x, nav_pos.y),
+                                 ImVec2(kIconBtnW, kIconBtnH), NavButtonIcon::Up,
+                                 "Parent directory (..)", false, has_parent)) {
+        browser.navigate_up();
+        parent_selected = false;
+        ImGui::SetWindowFocus("##ImageBrowserList");
+    }
+    cur_x += kIconBtnW + kIconGap;
+
+    if (RenderHardwareIconButton("##ImgRefresh", ImVec2(cur_x, nav_pos.y),
+                                 ImVec2(kIconBtnW, kIconBtnH), NavButtonIcon::Refresh, "Refresh")) {
+        browser.refresh();
+        parent_selected = false;
+        ImGui::SetWindowFocus("##ImageBrowserList");
+    }
+    cur_x += kIconBtnW + 12.0f;
+
+    const char* view_tip = is_icon_view
+        ? "View: Icons (click for List)"
+        : "View: List (click for Icons)";
+    if (RenderHardwareIconButton("##ImgViewToggle", ImVec2(cur_x, nav_pos.y),
+                                 ImVec2(kIconBtnW, kIconBtnH),
+                                 is_icon_view ? NavButtonIcon::ViewIcons : NavButtonIcon::ViewList,
+                                 view_tip, is_icon_view)) {
+        settings.file_browser_view = is_icon_view ? FileBrowserViewMode::List : FileBrowserViewMode::Icons;
+        model.set_app_settings(settings);
+        save_app_settings(default_settings_path(), settings);
+        ImGui::SetWindowFocus("##ImageBrowserList");
+    }
+    cur_x += kIconBtnW + 14.0f;
+
+    ImGui::SetCursorScreenPos(ImVec2(cur_x, nav_pos.y + 5.0f));
     bool show_all = browser.show_all_files();
     if (ImGui::Checkbox("Show all files", &show_all)) {
         browser.set_show_all_files(show_all);
+        parent_selected = false;
         ImGui::SetWindowFocus("##ImageBrowserList");
-    }
-
-    const bool can_load = !browser.selected_file().empty();
-    constexpr float kLoadBtnW = 148.0f;
-    const ImVec2 load_pos(nav_pos.x + std::max(510.0f, avail_w - kLoadBtnW), nav_pos.y);
-    if (RenderHardwareTextButton("##BtnLoadImage", "Load Image", load_pos, ImVec2(kLoadBtnW, 32.0f), false, can_load)) {
-        try_load_selected(browser.selected_file());
     }
 
     ImGui::SetCursorScreenPos(ImVec2(nav_pos.x, nav_pos.y + 42.0f));
@@ -494,11 +727,13 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
     ImGui::SetNextItemWidth(std::max(180.0f, avail_w - 86.0f));
     if (ImGui::InputText("##BrowserPath", path_buf, sizeof(path_buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
         browser.navigate_to(std::filesystem::path(path_buf));
+        parent_selected = false;
         ImGui::SetWindowFocus("##ImageBrowserList");
     }
     ImGui::SameLine();
     if (ImGui::Button("Go", ImVec2(72.0f, 0.0f))) {
         browser.navigate_to(std::filesystem::path(path_buf));
+        parent_selected = false;
         ImGui::SetWindowFocus("##ImageBrowserList");
     }
 
@@ -509,13 +744,14 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
         ImGui::SameLine();
         if (ImGui::SmallButton("Clear")) {
             browser.clear_filter_query();
+            parent_selected = false;
             ImGui::SetWindowFocus("##ImageBrowserList");
         }
     } else {
         ImGui::Spacing();
     }
 
-    // Directory & file list (slightly larger font + full keyboard navigation)
+    // Directory & file list / icon grid (larger font + full keyboard navigation)
     const float list_height = std::max(160.0f, ImGui::GetContentRegionAvail().y - 34.0f);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
     ImGui::BeginChild("##ImageBrowserList", ImVec2(0.0f, list_height), true,
@@ -525,31 +761,72 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
             ImGui::SetWindowFocus();
         }
 
+        constexpr float kCardW = 148.0f;
+        constexpr float kCardH = 126.0f;
+        constexpr float kCardGap = 12.0f;
+        constexpr float kGridPad = 12.0f;
+        const int icon_cols = std::max(
+            1,
+            static_cast<int>((ImGui::GetContentRegionAvail().x - 2.0f * kGridPad + kCardGap) / (kCardW + kCardGap))
+        );
+
+        const auto& entries = browser.entries();
         ImGuiIO& io = ImGui::GetIO();
         bool scroll_to_selection = false;
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !io.WantTextInput) {
+            auto move_step = [&](int step) {
+                if (entries.empty()) {
+                    if (has_parent) {
+                        parent_selected = true;
+                    }
+                    return;
+                }
+                if (parent_selected) {
+                    if (step > 0) {
+                        parent_selected = false;
+                        const int target = std::clamp(step - 1, 0, static_cast<int>(entries.size()) - 1);
+                        browser.select_entry(static_cast<std::size_t>(target));
+                    }
+                } else {
+                    const int cur = browser.selected_index().has_value()
+                        ? static_cast<int>(*browser.selected_index())
+                        : 0;
+                    if (cur + step < 0 && has_parent) {
+                        parent_selected = true;
+                    } else {
+                        browser.move_selection(step);
+                    }
+                }
+                scroll_to_selection = true;
+            };
+
             if (io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
                 browser.navigate_up();
+                parent_selected = false;
                 scroll_to_selection = true;
+            } else if (is_icon_view && ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+                move_step(-1);
+            } else if (is_icon_view && ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+                move_step(1);
             } else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-                browser.move_selection(-1);
-                scroll_to_selection = true;
+                move_step(is_icon_view ? -icon_cols : -1);
             } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-                browser.move_selection(1);
-                scroll_to_selection = true;
+                move_step(is_icon_view ? icon_cols : 1);
             } else if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) {
-                browser.move_selection(-10);
-                scroll_to_selection = true;
+                move_step(is_icon_view ? -(icon_cols * 3) : -10);
             } else if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) {
-                browser.move_selection(10);
-                scroll_to_selection = true;
+                move_step(is_icon_view ? (icon_cols * 3) : 10);
             } else if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
-                if (browser.selected_index().has_value()) {
+                if (parent_selected) {
+                    browser.navigate_up();
+                    parent_selected = false;
+                } else if (browser.selected_index().has_value()) {
                     if (browser.activate_entry(*browser.selected_index())) {
                         try_load_selected(browser.selected_file());
                     }
-                    scroll_to_selection = true;
+                    parent_selected = false;
                 }
+                scroll_to_selection = true;
             } else if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
                 if (!browser.filter_query().empty()) {
                     std::string q = browser.filter_query();
@@ -558,6 +835,7 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
                 } else {
                     browser.navigate_up();
                 }
+                parent_selected = false;
                 scroll_to_selection = true;
             }
 
@@ -602,27 +880,144 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
                 }
                 if (added) {
                     browser.set_filter_query(q);
+                    parent_selected = false;
                     scroll_to_selection = true;
                 }
             }
         }
 
-        ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.18f);
-        const auto& entries = browser.entries();
-        if (entries.empty()) {
+        ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.38f);
+        if (entries.empty() && !has_parent) {
             ImGui::TextDisabled(browser.filter_query().empty()
                                     ? "(No matching .cue or .toc files in this directory)"
                                     : "(No entries match current filter)");
+        } else if (is_icon_view) {
+            const ImVec2 grid_origin = ImGui::GetCursorPos();
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImFont* font = ImGui::GetFont();
+            const float font_sz = ImGui::GetFontSize();
+            const int total_items = (has_parent ? 1 : 0) + static_cast<int>(entries.size());
+
+            for (int item_idx = 0; item_idx < total_items; ++item_idx) {
+                const bool is_parent_item = has_parent && (item_idx == 0);
+                const std::size_t entry_idx = is_parent_item
+                    ? 0
+                    : static_cast<std::size_t>(item_idx - (has_parent ? 1 : 0));
+                const int col = item_idx % icon_cols;
+                const int row = item_idx / icon_cols;
+
+                ImGui::SetCursorPos(ImVec2(
+                    grid_origin.x + kGridPad + static_cast<float>(col) * (kCardW + kCardGap),
+                    grid_origin.y + kGridPad + static_cast<float>(row) * (kCardH + kCardGap)
+                ));
+                const ImVec2 card_min = ImGui::GetCursorScreenPos();
+                const ImVec2 card_max(card_min.x + kCardW, card_min.y + kCardH);
+
+                const bool is_selected = is_parent_item
+                    ? parent_selected
+                    : (!parent_selected && browser.selected_index().has_value() && (*browser.selected_index() == entry_idx));
+
+                ImGui::PushID(item_idx);
+                ImGui::InvisibleButton("##BrowserIconCard", ImVec2(kCardW, kCardH));
+                const bool hovered = ImGui::IsItemHovered();
+                const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+                const bool double_clicked = hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+                ImGui::PopID();
+
+                if (clicked) {
+                    ImGui::SetWindowFocus("##ImageBrowserList");
+                    if (is_parent_item) {
+                        parent_selected = true;
+                    } else {
+                        parent_selected = false;
+                        browser.select_entry(entry_idx);
+                    }
+                }
+                if (double_clicked) {
+                    if (is_parent_item) {
+                        browser.navigate_up();
+                        parent_selected = false;
+                    } else if (browser.activate_entry(entry_idx)) {
+                        try_load_selected(browser.selected_file());
+                    }
+                }
+                if (is_selected && scroll_to_selection) {
+                    ImGui::SetScrollHereY(0.5f);
+                }
+
+                const ImU32 card_bg = is_selected
+                    ? IM_COL32(20, 30, 38, 240)
+                    : (hovered ? IM_COL32(24, 28, 34, 230) : IM_COL32(16, 18, 22, 210));
+                draw_list->AddRectFilled(card_min, card_max, card_bg, 6.0f);
+                if (is_selected) {
+                    DrawDiffusedRectOutline(draw_list, card_min, card_max, 6.0f, kColCyanBright, 1.5f, true);
+                } else {
+                    draw_list->AddRect(card_min, card_max,
+                                       hovered ? IM_COL32(95, 115, 135, 180) : IM_COL32(46, 50, 58, 150),
+                                       6.0f, 0, 1.0f);
+                }
+
+                const bool is_dir = is_parent_item || entries[entry_idx].isDirectory;
+                const bool is_img = !is_parent_item && !is_dir &&
+                    FileBrowserState::is_supported_image_extension(entries[entry_idx].path);
+
+                DrawBrowserEntryIcon(draw_list,
+                                     ImVec2(card_min.x + kCardW * 0.5f, card_min.y + 42.0f),
+                                     is_parent_item, is_dir, is_img, is_selected, hovered);
+
+                const std::string& label = is_parent_item ? std::string("..") : entries[entry_idx].name;
+                const ImU32 name_col = is_selected
+                    ? kColCyanGlowCore
+                    : (is_img ? IM_COL32(140, 235, 255, 255) : IM_COL32(224, 230, 240, 255));
+                DrawCenteredText(draw_list, font, font_sz,
+                                 card_min.x + 8.0f, kCardW - 16.0f, card_min.y + 78.0f,
+                                 name_col, label);
+
+                const std::string sub = is_parent_item
+                    ? "Parent Dir"
+                    : (is_dir ? "Folder" : FormatFileSize(entries[entry_idx].fileSize));
+                DrawCenteredText(draw_list, font, font_sz * 0.78f,
+                                 card_min.x + 8.0f, kCardW - 16.0f, card_min.y + 101.0f,
+                                 IM_COL32(140, 150, 165, 215), sub);
+
+                if (hovered) {
+                    ImGui::SetTooltip("%s", label.c_str());
+                }
+            }
         } else if (ImGui::BeginTable("##FileBrowserTable", 3,
                                      ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 68.0f);
+            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 76.0f);
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 104.0f);
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 114.0f);
             ImGui::TableHeadersRow();
+
+            if (has_parent) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextColored(ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "[DIR]");
+
+                ImGui::TableSetColumnIndex(1);
+                if (ImGui::Selectable("..", parent_selected,
+                                      ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
+                    parent_selected = true;
+                    ImGui::SetWindowFocus("##ImageBrowserList");
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        browser.navigate_up();
+                        parent_selected = false;
+                    }
+                }
+                if (parent_selected && scroll_to_selection) {
+                    ImGui::SetScrollHereY(0.5f);
+                }
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextDisabled("--");
+            }
 
             for (std::size_t i = 0; i < entries.size(); ++i) {
                 const auto& entry = entries[i];
-                const bool is_selected = browser.selected_index().has_value() && (*browser.selected_index() == i);
+                const bool is_selected = !parent_selected &&
+                    browser.selected_index().has_value() && (*browser.selected_index() == i);
 
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
@@ -638,6 +1033,7 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
                 ImGui::PushID(static_cast<int>(i));
                 if (ImGui::Selectable(entry.name.c_str(), is_selected,
                                       ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
+                    parent_selected = false;
                     browser.select_entry(i);
                     ImGui::SetWindowFocus("##ImageBrowserList");
                     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
@@ -1038,6 +1434,18 @@ void RenderSettingsScreen(CdDisplayModel& model) {
         changed = true;
     }
     ImGui::TextDisabled("    Display the square CD cover under controls in horizontal layout when room allows.");
+    ImGui::Spacing();
+
+    const char* browser_view_items[] = {"List", "Icons"};
+    int browser_view_idx = (settings.file_browser_view == FileBrowserViewMode::Icons) ? 1 : 0;
+    ImGui::SetNextItemWidth(220.0f);
+    if (ImGui::Combo("Image/File browser view", &browser_view_idx, browser_view_items, 2)) {
+        settings.file_browser_view = (browser_view_idx == 1)
+            ? FileBrowserViewMode::Icons
+            : FileBrowserViewMode::List;
+        changed = true;
+    }
+    ImGui::TextDisabled("    Default display mode (List or Icons) for the Image/File browser.");
     ImGui::Spacing();
 
     if (changed) {

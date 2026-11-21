@@ -31,6 +31,11 @@ enum class LayoutMode {
     Vertical
 };
 
+enum class FileBrowserViewMode {
+    List,
+    Icons
+};
+
 struct TrackInfo {
     int number{1};
     int duration_seconds{222};
@@ -50,6 +55,7 @@ struct AppSettings {
     LayoutMode layout_mode{LayoutMode::Dynamic};
     bool show_playlist{true};
     bool show_cd_cover{true};
+    FileBrowserViewMode file_browser_view{FileBrowserViewMode::List};
 };
 
 class CdDisplayModel {
