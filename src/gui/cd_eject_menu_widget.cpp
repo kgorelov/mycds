@@ -30,7 +30,7 @@ constexpr NavItem kNavItems[] = {
     {EjectMenuScreen::Cd, "##NavCd", "CD", "LOAD FROM PHYSICAL CD DRIVE"},
     {EjectMenuScreen::ImageFile, "##NavImageFile", "Image/File", "LOAD DISC IMAGE (.CUE / .TOC)"},
     {EjectMenuScreen::Library, "##NavLibrary", "Library", "CD LIBRARY"},
-    {EjectMenuScreen::DiskInfo, "##NavDiskInfo", "Disk Info", "DISC INFORMATION & ARTWORK"},
+    {EjectMenuScreen::DiskInfo, "##NavDiskInfo", "Disc Info", "DISC INFORMATION & ARTWORK"},
     {EjectMenuScreen::Settings, "##NavSettings", "Settings", "PROGRAM SETTINGS"},
 };
 
@@ -1077,6 +1077,7 @@ void RenderLibraryScreen(CdDisplayModel& model) {
     static LibraryCatalogState library;
     static char search_buf[128] = "";
 
+    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.25f);
     ImGui::TextDisabled("Mock Library Catalog (search by artist, album, or track name):");
     ImGui::Spacing();
 
@@ -1217,11 +1218,13 @@ void RenderLibraryScreen(CdDisplayModel& model) {
     }
     ImGui::SetCursorScreenPos(ImVec2(load_pos.x, load_pos.y + 42.0f));
     ImGui::Dummy(ImVec2(1.0f, 1.0f));
+    ImGui::PopFont();
 }
 
 void RenderDiskInfoScreen(CdDisplayModel& model) {
     static DiskInfoState info_state;
 
+    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.25f);
     const float avail_w = ImGui::GetContentRegionAvail().x;
     const float avail_h = ImGui::GetContentRegionAvail().y;
     const float left_col_w = std::max(280.0f, avail_w * 0.42f);
@@ -1268,7 +1271,7 @@ void RenderDiskInfoScreen(CdDisplayModel& model) {
         std::snprintf(slot_badge, sizeof(slot_badge), "%zu / %zu: %s",
                       inlay_idx + 1, slots.size(), active_slot.label.c_str());
         draw_list->AddText(ImVec2(art_min.x + 12.0f, art_min.y + 10.0f), kColCyanBright, slot_badge);
-        draw_list->AddText(ImVec2(art_min.x + 12.0f, art_max.y - 24.0f),
+        draw_list->AddText(ImVec2(art_min.x + 12.0f, art_max.y - 28.0f),
                            IM_COL32(170, 180, 195, 220), active_slot.subtitle.c_str());
 
         ImGui::Dummy(ImVec2(art_w, art_h + 6.0f));
@@ -1366,11 +1369,15 @@ void RenderDiskInfoScreen(CdDisplayModel& model) {
         ImGui::PopStyleColor();
     }
     ImGui::EndChild();
+    ImGui::PopFont();
 }
 
 void RenderSettingsScreen(CdDisplayModel& model) {
     static std::string status_msg;
 
+    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.25f);
+    ImGui::BeginChild("##SettingsScroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NoBackground);
+    {
     ImGui::TextColored(ImVec4(0.78f, 0.82f, 0.88f, 1.0f),
                        "Configure startup and disc-loading playback behavior:");
     ImGui::Spacing();
@@ -1462,6 +1469,9 @@ void RenderSettingsScreen(CdDisplayModel& model) {
         ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.25f, 0.90f, 0.45f, 1.0f), "%s", status_msg.c_str());
     }
+    }
+    ImGui::EndChild();
+    ImGui::PopFont();
 }
 
 } // namespace

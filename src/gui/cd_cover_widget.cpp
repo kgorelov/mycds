@@ -24,7 +24,7 @@ void RenderCdCoverWidget(CdDisplayModel& model, const ImVec2& size) {
     DrawChassisScrew(draw_list, ImVec2(panel_min.x + 10.0f, panel_max.y - 10.0f));
     DrawChassisScrew(draw_list, ImVec2(panel_max.x - 10.0f, panel_max.y - 10.0f));
 
-    // Reserve a compact 2-line footer at the bottom for album info + Disk Info shortcut
+    // Reserve a compact 2-line footer at the bottom for album info + Disc Info shortcut
     constexpr float kPadX = 20.0f;
     constexpr float kPadTop = 16.0f;
     constexpr float kPadBottom = 14.0f;
@@ -65,7 +65,7 @@ void RenderCdCoverWidget(CdDisplayModel& model, const ImVec2& size) {
         ImGui::PopClipRect();
 
         ImGui::SetCursorPos(ImVec2(std::max(0.0f, footer_w - btn_w), 8.0f));
-        if (ImGui::SmallButton("Disk Info...")) {
+        if (ImGui::SmallButton("Disc Info...")) {
             model.set_active_eject_screen(EjectMenuScreen::DiskInfo);
             model.open_eject_menu();
         }
