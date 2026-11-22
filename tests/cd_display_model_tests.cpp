@@ -38,7 +38,7 @@ TEST(CdDisplayModelTests, CloudAndCddbTimerAtThreeSeconds) {
     EXPECT_FALSE(model.is_cddb_active());
 
     model.update(0.5); // total uptime = 3.0s
-    EXPECT_TRUE(model.is_cloud_active());
+    EXPECT_FALSE(model.is_cloud_active());
     EXPECT_TRUE(model.is_cddb_active());
 }
 

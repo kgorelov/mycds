@@ -695,12 +695,9 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
         draw_list->AddText(ImVec2(tile_pos.x + 44.0f, text_y), col_core, "CLOUD");
 
         ImGui::SetCursorScreenPos(tile_pos);
-        if (ImGui::InvisibleButton("CloudIndicatorBtn", ImVec2(ind_tile_w, ind_tile_h))) {
-            model.toggle_connectivity();
-        }
+        ImGui::InvisibleButton("CloudIndicatorBtn", ImVec2(ind_tile_w, ind_tile_h));
         if (ImGui::IsItemHovered()) {
-            draw_list->AddRect(tile_pos, ImVec2(tile_pos.x + ind_tile_w, tile_pos.y + ind_tile_h),
-                               IM_COL32(120, 255, 150, 120), 4.0f);
+            ImGui::SetTooltip("Cloud Library (Disabled — coming in a future milestone)");
         }
     }
 

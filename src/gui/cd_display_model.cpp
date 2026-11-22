@@ -1091,7 +1091,7 @@ double CdDisplayModel::uptime_seconds() const {
 }
 
 bool CdDisplayModel::is_cloud_active() const {
-    return uptime_seconds_ >= 3.0;
+    return false;
 }
 
 bool CdDisplayModel::is_cddb_active() const {
