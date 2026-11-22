@@ -94,14 +94,10 @@ public:
     void set_genre_filter(const std::string& genre);
     [[nodiscard]] const std::string& genre_filter() const;
 
-    void set_year_filter(int year);
-    [[nodiscard]] int year_filter() const;
-
     void set_sort_mode(LibrarySortMode mode);
     [[nodiscard]] LibrarySortMode sort_mode() const;
 
     [[nodiscard]] std::vector<std::string> available_genres() const;
-    [[nodiscard]] std::vector<int> available_years() const;
     [[nodiscard]] std::vector<const LibraryEntry*> filtered_entries() const;
 
     void set_selected_index(std::size_t index);
@@ -111,7 +107,6 @@ private:
     std::vector<LibraryEntry> entries_{};
     std::string search_query_{};
     std::string genre_filter_{};
-    int year_filter_{0};
     LibrarySortMode sort_mode_{LibrarySortMode::Relevance};
     std::size_t selected_index_{0};
 };

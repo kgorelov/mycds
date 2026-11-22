@@ -415,15 +415,6 @@ const std::string& LibraryCatalogState::genre_filter() const {
     return genre_filter_;
 }
 
-void LibraryCatalogState::set_year_filter(int year) {
-    year_filter_ = year;
-    selected_index_ = 0;
-}
-
-int LibraryCatalogState::year_filter() const {
-    return year_filter_;
-}
-
 void LibraryCatalogState::set_sort_mode(LibrarySortMode mode) {
     sort_mode_ = mode;
     selected_index_ = 0;
@@ -443,16 +434,6 @@ std::vector<std::string> LibraryCatalogState::available_genres() const {
     return std::vector<std::string>(unique_genres.begin(), unique_genres.end());
 }
 
-std::vector<int> LibraryCatalogState::available_years() const {
-    std::set<int> unique_years;
-    for (const auto& entry : entries_) {
-        if (entry.year > 0) {
-            unique_years.insert(entry.year);
-        }
-    }
-    return std::vector<int>(unique_years.rbegin(), unique_years.rend());
-}
-
 std::vector<const LibraryEntry*> LibraryCatalogState::filtered_entries() const {
     const std::string query_lower = to_lower_ascii(search_query_);
 
@@ -468,9 +449,6 @@ std::vector<const LibraryEntry*> LibraryCatalogState::filtered_entries() const {
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         const auto& entry = entries_[i];
         if (!genre_filter_.empty() && entry.genre != genre_filter_) {
-            continue;
-        }
-        if (year_filter_ > 0 && entry.year != year_filter_) {
             continue;
         }
         const int score = compute_relevance_score(entry, query_lower);

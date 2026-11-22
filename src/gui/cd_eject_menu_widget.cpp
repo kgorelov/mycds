@@ -1,6 +1,7 @@
 #include "cd_eject_menu_widget.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -1192,6 +1193,53 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
     }
 }
 
+std::string ToLowerAscii(const std::string& text) {
+    std::string out = text;
+    for (char& ch : out) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return out;
+}
+
+void DrawHighlightedText(ImDrawList* draw_list,
+                         ImVec2& pos,
+                         const std::string& text,
+                         const std::string& query_lower,
+                         ImU32 normal_col,
+                         ImU32 highlight_col) {
+    if (text.empty()) {
+        return;
+    }
+
+    auto draw_span = [&](std::size_t start, std::size_t len, ImU32 col) {
+        if (len == 0) {
+            return;
+        }
+        const char* begin = text.data() + start;
+        const char* end = begin + len;
+        draw_list->AddText(pos, col, begin, end);
+        pos.x += ImGui::CalcTextSize(begin, end).x;
+    };
+
+    if (query_lower.empty()) {
+        draw_span(0, text.size(), normal_col);
+        return;
+    }
+
+    const std::string text_lower = ToLowerAscii(text);
+    std::size_t cursor = 0;
+    while (cursor < text.size()) {
+        const std::size_t match_pos = text_lower.find(query_lower, cursor);
+        if (match_pos == std::string::npos) {
+            draw_span(cursor, text.size() - cursor, normal_col);
+            break;
+        }
+        draw_span(cursor, match_pos - cursor, normal_col);
+        draw_span(match_pos, query_lower.size(), highlight_col);
+        cursor = match_pos + query_lower.size();
+    }
+}
+
 void RenderLibraryScreen(CdDisplayModel& model) {
     static LibraryCatalogState library;
     static char search_buf[128] = "";
@@ -1202,7 +1250,14 @@ void RenderLibraryScreen(CdDisplayModel& model) {
 
     // Search + Filter + Sort toolbar
     const float avail_w = ImGui::GetContentRegionAvail().x;
-    const float search_w = std::max(180.0f, avail_w * 0.36f);
+    const float item_gap_x = ImGui::GetStyle().ItemSpacing.x;
+    const bool wrap_toolbar = (avail_w < 560.0f);
+    const float genre_w = wrap_toolbar ? std::max(120.0f, (avail_w - item_gap_x) * 0.45f) : 150.0f;
+    const float sort_w = wrap_toolbar ? std::max(140.0f, avail_w - genre_w - item_gap_x) : 175.0f;
+    const float search_w = wrap_toolbar
+        ? avail_w
+        : std::max(180.0f, avail_w - genre_w - sort_w - 2.0f * item_gap_x);
+
     ImGui::SetNextItemWidth(search_w);
     {
         ScopedSearchBarStyle search_style;
@@ -1212,11 +1267,13 @@ void RenderLibraryScreen(CdDisplayModel& model) {
         }
     }
 
-    ImGui::SameLine();
+    if (!wrap_toolbar) {
+        ImGui::SameLine();
+    }
     const auto genres = library.available_genres();
     const std::string& active_genre = library.genre_filter();
     const char* genre_preview = active_genre.empty() ? "All Genres" : active_genre.c_str();
-    ImGui::SetNextItemWidth(150.0f);
+    ImGui::SetNextItemWidth(genre_w);
     if (ImGui::BeginCombo("##LibGenreFilter", genre_preview)) {
         if (ImGui::Selectable("All Genres", active_genre.empty())) {
             library.set_genre_filter("");
@@ -1231,30 +1288,6 @@ void RenderLibraryScreen(CdDisplayModel& model) {
     }
 
     ImGui::SameLine();
-    const auto years = library.available_years();
-    const int active_year = library.year_filter();
-    char year_preview[24];
-    if (active_year <= 0) {
-        std::snprintf(year_preview, sizeof(year_preview), "All Years");
-    } else {
-        std::snprintf(year_preview, sizeof(year_preview), "%d", active_year);
-    }
-    ImGui::SetNextItemWidth(110.0f);
-    if (ImGui::BeginCombo("##LibYearFilter", year_preview)) {
-        if (ImGui::Selectable("All Years", active_year == 0)) {
-            library.set_year_filter(0);
-        }
-        for (int y : years) {
-            char ybuf[16];
-            std::snprintf(ybuf, sizeof(ybuf), "%d", y);
-            if (ImGui::Selectable(ybuf, active_year == y)) {
-                library.set_year_filter(y);
-            }
-        }
-        ImGui::EndCombo();
-    }
-
-    ImGui::SameLine();
     const char* sort_labels[] = {
         "Sort: Relevance",
         "Sort: Year (Newest)",
@@ -1262,7 +1295,7 @@ void RenderLibraryScreen(CdDisplayModel& model) {
         "Sort: Recently Added"
     };
     const int sort_idx = static_cast<int>(library.sort_mode());
-    ImGui::SetNextItemWidth(175.0f);
+    ImGui::SetNextItemWidth(sort_w);
     if (ImGui::BeginCombo("##LibSortMode", sort_labels[sort_idx])) {
         for (int i = 0; i < 4; ++i) {
             if (ImGui::Selectable(sort_labels[i], sort_idx == i)) {
@@ -1275,56 +1308,105 @@ void RenderLibraryScreen(CdDisplayModel& model) {
     ImGui::Spacing();
 
     const auto matches = library.filtered_entries();
-    const float body_h = std::max(140.0f, ImGui::GetContentRegionAvail().y - 54.0f);
-    const float left_w = std::max(260.0f, avail_w * 0.54f);
+    const std::string query_lower = ToLowerAscii(library.search_query());
+    constexpr ImU32 kMatchGreenCol = IM_COL32(64, 230, 115, 255);
+    constexpr float kMinHorizontalSplitWidth = 680.0f;
+    const bool use_vertical_layout = (avail_w < kMinHorizontalSplitWidth);
 
-    // Left: matching albums list
+    const float total_body_h = std::max(use_vertical_layout ? 210.0f : 140.0f,
+                                        ImGui::GetContentRegionAvail().y - 54.0f);
+    const float list_gap_y = ImGui::GetStyle().ItemSpacing.y;
+    const float albums_h = use_vertical_layout
+        ? std::max(100.0f, (total_body_h - list_gap_y) * 0.45f)
+        : total_body_h;
+    const float tracks_h = use_vertical_layout
+        ? std::max(100.0f, total_body_h - list_gap_y - albums_h)
+        : total_body_h;
+    const float albums_w = use_vertical_layout ? 0.0f : std::max(260.0f, avail_w * 0.54f);
+
+    // Matching albums list
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
-    ImGui::BeginChild("##LibAlbumList", ImVec2(left_w, body_h), true);
+    ImGui::BeginChild("##LibAlbumList", ImVec2(albums_w, albums_h), true);
     {
         if (matches.empty()) {
             ImGui::TextDisabled("No albums match your search/filter criteria.");
         } else {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
             for (std::size_t i = 0; i < matches.size(); ++i) {
                 const auto* entry = matches[i];
                 const bool is_selected = (library.selected_index() == i);
-                char row_buf[256];
-                std::snprintf(row_buf, sizeof(row_buf), "%s - %s (%d) [%s]",
-                              entry->artist.c_str(), entry->album.c_str(),
-                              entry->year, entry->genre.c_str());
-                if (ImGui::Selectable(row_buf, is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::Selectable("##LibAlbumRow", is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
                     library.set_selected_index(i);
                     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                         model.load_disc(entry->artist, entry->album, entry->tracks);
                         model.set_has_cddb_data(true);
                     }
                 }
+                ImGui::PopID();
+
+                ImVec2 text_pos = ImGui::GetItemRectMin();
+                DrawHighlightedText(dl, text_pos, entry->artist, query_lower, text_col, kMatchGreenCol);
+                DrawHighlightedText(dl, text_pos, " - ", "", text_col, kMatchGreenCol);
+                DrawHighlightedText(dl, text_pos, entry->album, query_lower, text_col, kMatchGreenCol);
+                char meta_buf[96];
+                std::snprintf(meta_buf, sizeof(meta_buf), " (%d) [%s]", entry->year, entry->genre.c_str());
+                DrawHighlightedText(dl, text_pos, meta_buf, "", text_col, kMatchGreenCol);
             }
         }
     }
     ImGui::EndChild();
 
-    ImGui::SameLine();
+    if (!use_vertical_layout) {
+        ImGui::SameLine();
+    }
 
-    // Right: selected album track preview
+    // Selected album track preview (side-by-side when wide, underneath when narrow)
     const LibraryEntry* selected_entry = (!matches.empty() && library.selected_index() < matches.size())
         ? matches[library.selected_index()]
         : nullptr;
 
-    ImGui::BeginChild("##LibTrackPreview", ImVec2(0.0f, body_h), true);
+    ImGui::BeginChild("##LibTrackPreview", ImVec2(0.0f, tracks_h), true);
     {
         if (!selected_entry) {
             ImGui::TextDisabled("Select an album to preview tracks.");
         } else {
-            ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s", selected_entry->album.c_str());
-            ImGui::TextColored(ImVec4(0.80f, 0.84f, 0.90f, 1.0f), "%s (%d)  |  Added: %s",
-                               selected_entry->artist.c_str(), selected_entry->year,
-                               selected_entry->addedDate.c_str());
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            const ImU32 title_col = IM_COL32(0, 230, 255, 255);
+            const ImU32 sub_col = IM_COL32(204, 214, 230, 255);
+            const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
+            const float line_h = ImGui::GetTextLineHeight();
+
+            {
+                const ImVec2 line_pos = ImGui::GetCursorScreenPos();
+                ImVec2 text_pos = line_pos;
+                DrawHighlightedText(dl, text_pos, selected_entry->album, query_lower, title_col, kMatchGreenCol);
+                ImGui::Dummy(ImVec2(std::max(1.0f, text_pos.x - line_pos.x), line_h));
+            }
+            {
+                const ImVec2 line_pos = ImGui::GetCursorScreenPos();
+                ImVec2 text_pos = line_pos;
+                DrawHighlightedText(dl, text_pos, selected_entry->artist, query_lower, sub_col, kMatchGreenCol);
+                char info_buf[96];
+                std::snprintf(info_buf, sizeof(info_buf), " (%d)  |  Added: %s",
+                              selected_entry->year, selected_entry->addedDate.c_str());
+                DrawHighlightedText(dl, text_pos, info_buf, "", sub_col, kMatchGreenCol);
+                ImGui::Dummy(ImVec2(std::max(1.0f, text_pos.x - line_pos.x), line_h));
+            }
+
             ImGui::Separator();
             ImGui::Spacing();
             for (const auto& trk : selected_entry->tracks) {
-                const std::string dur = FormatDurationMmSs(trk.duration_seconds);
-                ImGui::Text("%02d. %s  (%s)", trk.number, trk.title.c_str(), dur.c_str());
+                const ImVec2 line_pos = ImGui::GetCursorScreenPos();
+                ImVec2 text_pos = line_pos;
+                char prefix_buf[16];
+                std::snprintf(prefix_buf, sizeof(prefix_buf), "%02d. ", trk.number);
+                const std::string dur = "  (" + FormatDurationMmSs(trk.duration_seconds) + ")";
+                DrawHighlightedText(dl, text_pos, prefix_buf, "", text_col, kMatchGreenCol);
+                DrawHighlightedText(dl, text_pos, trk.title, query_lower, text_col, kMatchGreenCol);
+                DrawHighlightedText(dl, text_pos, dur, "", text_col, kMatchGreenCol);
+                ImGui::Dummy(ImVec2(std::max(1.0f, text_pos.x - line_pos.x), line_h));
             }
         }
     }
