@@ -900,6 +900,8 @@ PersistentUiState load_ui_state(const std::filesystem::path& path) {
         state.last_eject_screen = EjectMenuScreen::DiskInfo;
     } else if (screen_str == "settings") {
         state.last_eject_screen = EjectMenuScreen::Settings;
+    } else if (screen_str == "about") {
+        state.last_eject_screen = EjectMenuScreen::About;
     } else {
         state.last_eject_screen = EjectMenuScreen::Cd;
     }
@@ -939,6 +941,9 @@ bool save_ui_state(const std::filesystem::path& path, const PersistentUiState& s
             break;
         case EjectMenuScreen::Settings:
             screen_str = "settings";
+            break;
+        case EjectMenuScreen::About:
+            screen_str = "about";
             break;
     }
 

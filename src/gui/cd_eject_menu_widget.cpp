@@ -33,6 +33,7 @@ constexpr NavItem kNavItems[] = {
     {EjectMenuScreen::Library, "##NavLibrary", "Library", "CD LIBRARY"},
     {EjectMenuScreen::DiskInfo, "##NavDiskInfo", "Disc Info", "DISC INFORMATION & ARTWORK"},
     {EjectMenuScreen::Settings, "##NavSettings", "Settings", "PROGRAM SETTINGS"},
+    {EjectMenuScreen::About, "##NavAbout", "About", "ABOUT MYCDS"},
 };
 
 const char* ScreenTitle(EjectMenuScreen screen) {
@@ -486,6 +487,7 @@ enum class NavButtonIcon {
     Library,
     DiscInfo,
     Settings,
+    About,
     Back
 };
 
@@ -621,6 +623,16 @@ void DrawNavButtonIcon(ImDrawList* draw_list, const ImVec2& center, NavButtonIco
                 draw_list->AddRectFilled(ImVec2(center.x + knob_x[r] - 2.0f, y - 2.5f),
                                          ImVec2(center.x + knob_x[r] + 2.0f, y + 2.5f), col, 1.0f);
             }
+            break;
+        }
+        case NavButtonIcon::About: {
+            // Compact info card icon
+            DrawDiffusedRectOutline(draw_list, ImVec2(center.x - 8.0f, center.y - 7.0f),
+                                    ImVec2(center.x + 8.0f, center.y + 7.0f), 2.0f, col, 1.5f, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 4.5f, center.y - 2.0f),
+                             ImVec2(center.x + 4.5f, center.y - 2.0f), col, 1.5f, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 4.5f, center.y + 2.5f),
+                             ImVec2(center.x + 2.5f, center.y + 2.5f), col, 1.5f, is_bright);
             break;
         }
         case NavButtonIcon::Back: {
@@ -1361,6 +1373,7 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
     const auto matches = library.filtered_entries();
     bool scroll_to_selection = false;
     if (!just_entered && !matches.empty() &&
+        !ImGui::GetIO().KeyCtrl &&
         ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
         !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)) {
         const std::size_t current_idx = std::min(library.selected_index(), matches.size() - 1);
@@ -1948,6 +1961,56 @@ void RenderSettingsScreen(CdDisplayModel& model) {
     ImGui::PopFont();
 }
 
+void RenderAboutScreen() {
+    ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.25f);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
+    ImGui::BeginChild("##AboutContent", ImVec2(0.0f, 0.0f), true);
+    {
+        ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "MyCDs");
+        ImGui::SameLine();
+        ImGui::TextDisabled("v0.1.0");
+        ImGui::Spacing();
+
+        ImGui::TextWrapped(
+            "A compact disc player and library browser featuring physical CD drive playback, "
+            ".cue/.toc disc image support, CDDB metadata lookup, and a tactile brushed-metal hi-fi UI."
+        );
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::TextColored(ImVec4(0.80f, 0.84f, 0.90f, 1.0f), "Author:");
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Kirill Gorelov");
+
+        ImGui::TextColored(ImVec4(0.80f, 0.84f, 0.90f, 1.0f), "Version:");
+        ImGui::SameLine();
+        ImGui::TextUnformatted("0.1.0");
+
+        ImGui::TextColored(ImVec4(0.80f, 0.84f, 0.90f, 1.0f), "GitHub:");
+        ImGui::SameLine();
+        ImGui::TextLinkOpenURL("https://github.com/kgorelov/mycds");
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "Eject Menu Shortcuts");
+        ImGui::Spacing();
+        ImGui::TextDisabled("  Ctrl+Up / Ctrl+Down   Previous / Next screen");
+        ImGui::TextDisabled("  Ctrl+C                CD");
+        ImGui::TextDisabled("  Ctrl+F                Image/File");
+        ImGui::TextDisabled("  Ctrl+L                Library");
+        ImGui::TextDisabled("  Ctrl+D                Disc Info");
+        ImGui::TextDisabled("  Ctrl+S                Settings");
+        ImGui::TextDisabled("  Ctrl+A                About");
+        ImGui::TextDisabled("  ESC                   Return to CD Player");
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+    ImGui::PopFont();
+}
+
 } // namespace
 
 void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
@@ -2000,9 +2063,52 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
                 return NavButtonIcon::DiscInfo;
             case EjectMenuScreen::Settings:
                 return NavButtonIcon::Settings;
+            case EjectMenuScreen::About:
+                return NavButtonIcon::About;
         }
         return NavButtonIcon::CdDisc;
     };
+
+    auto switch_screen = [&](EjectMenuScreen target) {
+        if (model.active_eject_screen() != target) {
+            model.set_active_eject_screen(target);
+            GetPersistentUiState().last_eject_screen = target;
+            SavePersistentUiState();
+        }
+    };
+
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.KeyCtrl && !io.KeyAlt && !io.KeySuper) {
+        constexpr std::size_t kNumScreens = sizeof(kNavItems) / sizeof(kNavItems[0]);
+        auto current_screen_index = [&]() -> std::size_t {
+            for (std::size_t i = 0; i < kNumScreens; ++i) {
+                if (kNavItems[i].screen == model.active_eject_screen()) {
+                    return i;
+                }
+            }
+            return 0;
+        };
+
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)) {
+            const std::size_t idx = current_screen_index();
+            switch_screen(kNavItems[(idx + kNumScreens - 1) % kNumScreens].screen);
+        } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)) {
+            const std::size_t idx = current_screen_index();
+            switch_screen(kNavItems[(idx + 1) % kNumScreens].screen);
+        } else if (ImGui::IsKeyPressed(ImGuiKey_C, false)) {
+            switch_screen(EjectMenuScreen::Cd);
+        } else if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+            switch_screen(EjectMenuScreen::ImageFile);
+        } else if (ImGui::IsKeyPressed(ImGuiKey_L, false)) {
+            switch_screen(EjectMenuScreen::Library);
+        } else if (ImGui::IsKeyPressed(ImGuiKey_D, false)) {
+            switch_screen(EjectMenuScreen::DiskInfo);
+        } else if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+            switch_screen(EjectMenuScreen::Settings);
+        } else if (ImGui::IsKeyPressed(ImGuiKey_A, false)) {
+            switch_screen(EjectMenuScreen::About);
+        }
+    }
 
     for (const auto& item : kNavItems) {
         const bool is_active = (model.active_eject_screen() == item.screen);
@@ -2015,9 +2121,7 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
                                        ImVec2(btn_width, kBtnHeight),
                                        is_active);
         if (clicked) {
-            model.set_active_eject_screen(item.screen);
-            GetPersistentUiState().last_eject_screen = item.screen;
-            SavePersistentUiState();
+            switch_screen(item.screen);
         }
         btn_y += kBtnHeight + kBtnGap;
     }
@@ -2096,6 +2200,9 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
                 break;
             case EjectMenuScreen::Settings:
                 RenderSettingsScreen(model);
+                break;
+            case EjectMenuScreen::About:
+                RenderAboutScreen();
                 break;
         }
     }

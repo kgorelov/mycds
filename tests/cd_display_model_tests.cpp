@@ -320,6 +320,8 @@ TEST(CdDisplayModelTests, EjectMenuAndLoadDisc) {
     EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::DiskInfo);
     model.set_active_eject_screen(EjectMenuScreen::Settings);
     EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Settings);
+    model.set_active_eject_screen(EjectMenuScreen::About);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::About);
 
     model.close_eject_menu();
     EXPECT_FALSE(model.is_eject_menu_open());

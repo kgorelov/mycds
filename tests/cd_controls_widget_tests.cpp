@@ -159,7 +159,8 @@ TEST_F(CdControlsWidgetTest, RenderEjectMenuAllScreensHeadlessExecution) {
         EjectMenuScreen::ImageFile,
         EjectMenuScreen::Library,
         EjectMenuScreen::DiskInfo,
-        EjectMenuScreen::Settings
+        EjectMenuScreen::Settings,
+        EjectMenuScreen::About
     };
 
     for (EjectMenuScreen screen : screens) {
@@ -282,6 +283,68 @@ TEST_F(CdControlsWidgetTest, LibraryScreenFocusesSearchAndSupportsUpDownEnter) {
 
     EXPECT_EQ(model.album_title(), "Abbey Road");
     EXPECT_EQ(model.artist_name(), "The Beatles");
+}
+
+TEST_F(CdControlsWidgetTest, EjectMenuKeyboardShortcutsSwitchScreens) {
+    CdDisplayModel model;
+    model.open_eject_menu();
+    model.set_active_eject_screen(EjectMenuScreen::Cd);
+
+    auto render_frame = [&]() {
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImVec2(1460, 600));
+        ImGui::Begin("TestWindowShortcuts", nullptr, ImGuiWindowFlags_NoDecoration);
+        RenderEjectMenu(model, ImVec2(1412.0f, 560.0f));
+        ImGui::End();
+        ImGui::Render();
+    };
+
+    auto press_ctrl_key = [&](ImGuiKey key) {
+        ImGuiIO& io = ImGui::GetIO();
+        io.AddKeyEvent(ImGuiMod_Ctrl, true);
+        io.AddKeyEvent(key, true);
+        render_frame();
+        io.AddKeyEvent(key, false);
+        io.AddKeyEvent(ImGuiMod_Ctrl, false);
+        render_frame();
+    };
+
+    render_frame();
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Cd);
+
+    press_ctrl_key(ImGuiKey_DownArrow);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::ImageFile);
+
+    press_ctrl_key(ImGuiKey_UpArrow);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Cd);
+
+    // Wrap around from Cd to About with Ctrl+Up
+    press_ctrl_key(ImGuiKey_UpArrow);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::About);
+
+    // Wrap around from About to Cd with Ctrl+Down
+    press_ctrl_key(ImGuiKey_DownArrow);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Cd);
+
+    // Direct jump shortcuts
+    press_ctrl_key(ImGuiKey_F);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::ImageFile);
+
+    press_ctrl_key(ImGuiKey_L);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Library);
+
+    press_ctrl_key(ImGuiKey_D);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::DiskInfo);
+
+    press_ctrl_key(ImGuiKey_S);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Settings);
+
+    press_ctrl_key(ImGuiKey_A);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::About);
+
+    press_ctrl_key(ImGuiKey_C);
+    EXPECT_EQ(model.active_eject_screen(), EjectMenuScreen::Cd);
 }
 
 TEST(FileBrowserStateTests, FiltersCueAndTocFilesAndNavigatesDirectories) {

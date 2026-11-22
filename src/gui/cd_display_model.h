@@ -22,7 +22,8 @@ enum class EjectMenuScreen {
     ImageFile,
     Library,
     DiskInfo,
-    Settings
+    Settings,
+    About
 };
 
 enum class LayoutMode {
