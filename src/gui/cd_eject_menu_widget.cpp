@@ -477,7 +477,13 @@ enum class NavButtonIcon {
     Up,
     Refresh,
     ViewList,
-    ViewIcons
+    ViewIcons,
+    CdDisc,
+    Folder,
+    Library,
+    DiscInfo,
+    Settings,
+    Back
 };
 
 void DrawNavButtonIcon(ImDrawList* draw_list, const ImVec2& center, NavButtonIcon icon,
@@ -554,6 +560,60 @@ void DrawNavButtonIcon(ImDrawList* draw_list, const ImVec2& center, NavButtonIco
             }
             break;
         }
+        case NavButtonIcon::CdDisc: {
+            draw_list->AddCircle(center, 9.0f, col, 28, 1.8f);
+            draw_list->AddCircle(center, 3.0f, col, 16, 1.5f);
+            break;
+        }
+        case NavButtonIcon::Folder: {
+            DrawDiffusedRectOutline(draw_list, ImVec2(center.x - 8.5f, center.y - 4.0f),
+                                    ImVec2(center.x + 8.5f, center.y + 7.0f), 1.5f, col, 1.6f, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 8.5f, center.y - 4.0f),
+                             ImVec2(center.x - 8.5f, center.y - 7.5f), col, 1.6f, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 8.5f, center.y - 7.5f),
+                             ImVec2(center.x - 1.5f, center.y - 7.5f), col, 1.6f, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 1.5f, center.y - 7.5f),
+                             ImVec2(center.x + 1.0f, center.y - 4.0f), col, 1.6f, is_bright);
+            break;
+        }
+        case NavButtonIcon::Library: {
+            // Three vertical media/book spines
+            for (int i = -1; i <= 1; ++i) {
+                const float x = center.x + static_cast<float>(i) * 5.5f;
+                DrawDiffusedRectOutline(draw_list, ImVec2(x - 1.8f, center.y - 7.5f),
+                                        ImVec2(x + 1.8f, center.y + 7.5f), 0.8f, col, 1.4f, is_bright);
+            }
+            break;
+        }
+        case NavButtonIcon::DiscInfo: {
+            draw_list->AddCircle(center, 9.0f, col, 28, 1.6f);
+            draw_list->AddCircleFilled(ImVec2(center.x, center.y - 4.0f), 1.3f, col, 10);
+            DrawDiffusedLine(draw_list, ImVec2(center.x, center.y - 1.0f),
+                             ImVec2(center.x, center.y + 5.5f), col, 1.8f, is_bright);
+            break;
+        }
+        case NavButtonIcon::Settings: {
+            // Three horizontal EQ/slider bars with staggered knobs
+            const float knob_x[3] = {-3.5f, 4.0f, -1.5f};
+            for (int r = 0; r < 3; ++r) {
+                const float y = center.y + static_cast<float>(r - 1) * 5.5f;
+                DrawDiffusedLine(draw_list, ImVec2(center.x - 8.5f, y),
+                                 ImVec2(center.x + 8.5f, y), col, 1.4f, is_bright);
+                draw_list->AddRectFilled(ImVec2(center.x + knob_x[r] - 2.0f, y - 2.5f),
+                                         ImVec2(center.x + knob_x[r] + 2.0f, y + 2.5f), col, 1.0f);
+            }
+            break;
+        }
+        case NavButtonIcon::Back: {
+            // Leftward return arrow
+            DrawDiffusedLine(draw_list, ImVec2(center.x + 7.5f, center.y),
+                             ImVec2(center.x - 5.5f, center.y), col, t, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 1.0f, center.y - 5.5f),
+                             ImVec2(center.x - 7.0f, center.y), col, t, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 1.0f, center.y + 5.5f),
+                             ImVec2(center.x - 7.0f, center.y), col, t, is_bright);
+            break;
+        }
     }
 }
 
@@ -575,6 +635,12 @@ bool RenderHardwareIconButton(const char* str_id, const ImVec2& pos, const ImVec
     const ImVec2 b_min(pos.x + offset.x, pos.y + offset.y);
     const ImVec2 b_max(pos.x + size.x + offset.x, pos.y + size.y + offset.y);
     DrawButtonBrushedFace(draw_list, b_min, b_max, hovered, pressed);
+
+    if (is_active) {
+        const ImVec2 bar_min(b_min.x + 4.0f, b_min.y + 7.0f);
+        const ImVec2 bar_max(b_min.x + 7.5f, b_max.y - 7.0f);
+        DrawDiffusedRect(draw_list, bar_min, bar_max, 1.2f, kColCyanGlowCore, true);
+    }
 
     const ImU32 icon_col = !enabled
         ? IM_COL32(90, 96, 106, 160)
@@ -1540,9 +1606,12 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
 
     const ImVec2 origin = ImGui::GetCursorScreenPos();
 
-    constexpr float kSidebarWidth = 210.0f;
-    constexpr float kPanelGap = 18.0f;
-    constexpr float kInnerPadX = 16.0f;
+    constexpr float kExpandedSidebarWidth = 210.0f;
+    constexpr float kCompactSidebarWidth = 72.0f;
+    const bool compact_sidebar = (kExpandedSidebarWidth > total_w * 0.25f);
+    const float sidebar_width = compact_sidebar ? kCompactSidebarWidth : kExpandedSidebarWidth;
+    const float panel_gap = compact_sidebar ? 12.0f : 18.0f;
+    const float inner_pad_x = compact_sidebar ? 12.0f : 16.0f;
     constexpr float kInnerPadY = 20.0f;
     constexpr float kBtnHeight = 42.0f;
     constexpr float kBtnGap = 10.0f;
@@ -1551,28 +1620,49 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
     // Left Navigation Panel
     // -------------------------------------------------------------------------
     const ImVec2 sidebar_min = origin;
-    const ImVec2 sidebar_max(origin.x + kSidebarWidth, origin.y + total_h);
+    const ImVec2 sidebar_max(origin.x + sidebar_width, origin.y + total_h);
     GetBrushedMetal().RenderPanelChassis(draw_list, sidebar_min, sidebar_max, 8.0f);
     DrawCornerScrews(draw_list, sidebar_min, sidebar_max);
 
     // Subtle silkscreen header label
-    const char* menu_header = "EJECT MENU";
+    const char* menu_header = compact_sidebar ? "MENU" : "EJECT MENU";
     const ImVec2 header_sz = ImGui::CalcTextSize(menu_header);
     draw_list->AddText(
-        ImVec2(sidebar_min.x + (kSidebarWidth - header_sz.x) * 0.5f, sidebar_min.y + 12.0f),
+        ImVec2(sidebar_min.x + (sidebar_width - header_sz.x) * 0.5f, sidebar_min.y + 12.0f),
         IM_COL32(140, 150, 165, 200),
         menu_header
     );
 
-    const float btn_width = kSidebarWidth - 2.0f * kInnerPadX;
+    const float btn_width = sidebar_width - 2.0f * inner_pad_x;
     float btn_y = sidebar_min.y + 38.0f;
+
+    auto nav_icon_for_screen = [](EjectMenuScreen screen) {
+        switch (screen) {
+            case EjectMenuScreen::Cd:
+                return NavButtonIcon::CdDisc;
+            case EjectMenuScreen::ImageFile:
+                return NavButtonIcon::Folder;
+            case EjectMenuScreen::Library:
+                return NavButtonIcon::Library;
+            case EjectMenuScreen::DiskInfo:
+                return NavButtonIcon::DiscInfo;
+            case EjectMenuScreen::Settings:
+                return NavButtonIcon::Settings;
+        }
+        return NavButtonIcon::CdDisc;
+    };
 
     for (const auto& item : kNavItems) {
         const bool is_active = (model.active_eject_screen() == item.screen);
-        if (RenderHardwareTextButton(item.id, item.label,
-                                     ImVec2(sidebar_min.x + kInnerPadX, btn_y),
-                                     ImVec2(btn_width, kBtnHeight),
-                                     is_active)) {
+        const bool clicked = compact_sidebar
+            ? RenderHardwareIconButton(item.id, ImVec2(sidebar_min.x + inner_pad_x, btn_y),
+                                       ImVec2(btn_width, kBtnHeight),
+                                       nav_icon_for_screen(item.screen), item.label, is_active)
+            : RenderHardwareTextButton(item.id, item.label,
+                                       ImVec2(sidebar_min.x + inner_pad_x, btn_y),
+                                       ImVec2(btn_width, kBtnHeight),
+                                       is_active);
+        if (clicked) {
             model.set_active_eject_screen(item.screen);
             GetPersistentUiState().last_eject_screen = item.screen;
             SavePersistentUiState();
@@ -1584,30 +1674,35 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
     const float back_y = sidebar_max.y - kInnerPadY - kBtnHeight;
     const float sep_y = back_y - 14.0f;
     draw_list->AddLine(
-        ImVec2(sidebar_min.x + kInnerPadX, sep_y),
-        ImVec2(sidebar_max.x - kInnerPadX, sep_y),
+        ImVec2(sidebar_min.x + inner_pad_x, sep_y),
+        ImVec2(sidebar_max.x - inner_pad_x, sep_y),
         IM_COL32(28, 30, 35, 255), 1.5f
     );
     draw_list->AddLine(
-        ImVec2(sidebar_min.x + kInnerPadX, sep_y + 1.5f),
-        ImVec2(sidebar_max.x - kInnerPadX, sep_y + 1.5f),
+        ImVec2(sidebar_min.x + inner_pad_x, sep_y + 1.5f),
+        ImVec2(sidebar_max.x - inner_pad_x, sep_y + 1.5f),
         IM_COL32(75, 80, 90, 140), 1.0f
     );
 
-    if (RenderHardwareTextButton("##NavBack", "Back",
-                                 ImVec2(sidebar_min.x + kInnerPadX, back_y),
-                                 ImVec2(btn_width, kBtnHeight),
-                                 false)) {
+    const bool back_clicked = compact_sidebar
+        ? RenderHardwareIconButton("##NavBack", ImVec2(sidebar_min.x + inner_pad_x, back_y),
+                                   ImVec2(btn_width, kBtnHeight), NavButtonIcon::Back,
+                                   "Back (ESC)")
+        : RenderHardwareTextButton("##NavBack", "Back",
+                                   ImVec2(sidebar_min.x + inner_pad_x, back_y),
+                                   ImVec2(btn_width, kBtnHeight),
+                                   false);
+    if (back_clicked) {
         model.close_eject_menu();
     }
-    if (ImGui::IsItemHovered()) {
+    if (!compact_sidebar && ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Return to CD Player (ESC)");
     }
 
     // -------------------------------------------------------------------------
     // Right Content Panel
     // -------------------------------------------------------------------------
-    const ImVec2 content_min(sidebar_max.x + kPanelGap, origin.y);
+    const ImVec2 content_min(sidebar_max.x + panel_gap, origin.y);
     const ImVec2 content_max(origin.x + total_w, origin.y + total_h);
     GetBrushedMetal().RenderPanelChassis(draw_list, content_min, content_max, 8.0f);
     DrawCornerScrews(draw_list, content_min, content_max);

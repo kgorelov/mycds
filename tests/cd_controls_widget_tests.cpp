@@ -165,20 +165,22 @@ TEST_F(CdControlsWidgetTest, RenderEjectMenuAllScreensHeadlessExecution) {
     for (EjectMenuScreen screen : screens) {
         model.set_active_eject_screen(screen);
 
-        ImGui::NewFrame();
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(ImVec2(1460, 600));
-        ImGui::Begin("TestWindow", nullptr, ImGuiWindowFlags_NoDecoration);
+        for (const ImVec2& menu_size : {ImVec2(1412.0f, 560.0f), ImVec2(640.0f, 560.0f)}) {
+            ImGui::NewFrame();
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(ImVec2(1460, 600));
+            ImGui::Begin("TestWindow", nullptr, ImGuiWindowFlags_NoDecoration);
 
-        RenderEjectMenu(model, ImVec2(1412.0f, 560.0f));
+            RenderEjectMenu(model, menu_size);
 
-        ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        ASSERT_NE(draw_list, nullptr);
-        EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
-        EXPECT_GT(draw_list->VtxBuffer.size(), 0);
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ASSERT_NE(draw_list, nullptr);
+            EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
+            EXPECT_GT(draw_list->VtxBuffer.size(), 0);
 
-        ImGui::End();
-        ImGui::Render();
+            ImGui::End();
+            ImGui::Render();
+        }
     }
 }
 
