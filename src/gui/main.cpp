@@ -31,9 +31,28 @@ void print_gui_usage(std::string_view prog) {
               << "Options:\n"
               << "  --device <path>         Open physical CD drive (e.g. /dev/sr0)\n"
               << "  --image <path>          Open disc image (.cue or .toc)\n"
+              << "  --track, -t <num>       Jump to track number on startup\n"
+              << "  --seek, -s <time>       Seek to time (SS or MM:SS) within track (with -t) or from disc start\n"
               << "  --audio-driver <name>   Preferred SDL3 audio driver (e.g. pipewire, alsa, dummy)\n"
               << "  --stopped, --paused     Start in stopped state\n"
               << "  --help, -h              Show this help message\n";
+}
+
+void persist_playback_state(const mycds::gui::CdDisplayModel& model) {
+    mycds::gui::PersistentUiState st =
+        mycds::gui::load_ui_state(mycds::gui::default_ui_state_path());
+    if (model.has_real_source()) {
+        st.last_source_path = model.source_path();
+        st.last_source_is_device = model.source_is_device();
+        st.last_track = std::max(1, model.current_track_number());
+        st.last_position_seconds = std::max(0.0, model.track_elapsed_seconds());
+    } else if (!model.has_disc()) {
+        st.last_source_path.clear();
+        st.last_source_is_device = false;
+        st.last_track = 1;
+        st.last_position_seconds = 0.0;
+    }
+    mycds::gui::save_ui_state(mycds::gui::default_ui_state_path(), st);
 }
 
 } // namespace
@@ -44,6 +63,8 @@ int main(int argc, char* argv[]) {
     bool cli_source_type_explicit = false;
     bool force_stopped = false;
     std::string audio_driver;
+    std::optional<int> cli_track;
+    std::optional<double> cli_seek_seconds;
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
@@ -61,6 +82,37 @@ int main(int argc, char* argv[]) {
             cli_source_is_device = (arg == "--device");
             cli_source_type_explicit = true;
             cli_source_path = argv[++i];
+        } else if (arg == "--track" || arg == "-t") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: '" << arg << "' requires a track number.\n";
+                return 1;
+            }
+            try {
+                std::size_t idx = 0;
+                const std::string val_str(argv[++i]);
+                const int trk = std::stoi(val_str, &idx);
+                if (idx != val_str.size() || trk < 1) {
+                    std::cerr << "Error: Invalid track number '" << val_str << "'.\n";
+                    return 1;
+                }
+                cli_track = trk;
+            } catch (...) {
+                std::cerr << "Error: Invalid track number.\n";
+                return 1;
+            }
+        } else if (arg == "--seek" || arg == "-s") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: '" << arg << "' requires a time argument.\n";
+                return 1;
+            }
+            const std::string_view val_sv(argv[++i]);
+            const auto parsed = mycds::gui::parse_seek_time_seconds(val_sv);
+            if (!parsed.has_value()) {
+                std::cerr << "Error: Invalid seek time '" << val_sv
+                          << "' (expected seconds or MM:SS).\n";
+                return 1;
+            }
+            cli_seek_seconds = *parsed;
         } else if (arg == "--audio-driver") {
             if (i + 1 >= argc) {
                 std::cerr << "Error: '--audio-driver' requires a driver name.\n";
@@ -171,6 +223,7 @@ int main(int argc, char* argv[]) {
     display_model.set_active_eject_screen(startup_ui_state.last_eject_screen);
 
     bool cli_load_failed = false;
+    bool resumed_from_state = false;
     if (cli_source_path.has_value()) {
         const bool is_dev = cli_source_type_explicit
             ? cli_source_is_device
@@ -188,6 +241,22 @@ int main(int argc, char* argv[]) {
             std::cerr << "Failed to open '" << *cli_source_path << "': " << ex.what() << '\n';
             cli_load_failed = true;
         }
+    } else if (!startup_ui_state.last_source_path.empty()) {
+        try {
+            auto src = startup_ui_state.last_source_is_device
+                ? mycds::open_physical_cd_source(startup_ui_state.last_source_path)
+                : mycds::open_image_source(startup_ui_state.last_source_path);
+            std::string err;
+            if (display_model.open_disc_source(std::move(src), &err)) {
+                resumed_from_state = true;
+            } else {
+                std::cerr << "Warning: Could not restore previous disc '"
+                          << startup_ui_state.last_source_path << "': " << err << '\n';
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "Warning: Could not restore previous disc '"
+                      << startup_ui_state.last_source_path << "': " << ex.what() << '\n';
+        }
     }
 
     if (cli_load_failed) {
@@ -203,9 +272,20 @@ int main(int argc, char* argv[]) {
     }
 
     if (display_model.has_real_source()) {
-        if (!startup_settings.play_when_started || force_stopped) {
+        const bool should_play = startup_settings.play_when_started && !force_stopped;
+        if (!should_play) {
             display_model.stop();
-        } else if (!display_model.is_playing()) {
+        }
+        if (cli_track.has_value()) {
+            display_model.seek_to_track_and_seconds(*cli_track, cli_seek_seconds.value_or(0.0));
+        } else if (cli_seek_seconds.has_value()) {
+            display_model.seek_to_disc_seconds(*cli_seek_seconds);
+        } else if (resumed_from_state) {
+            display_model.seek_to_track_and_seconds(
+                startup_ui_state.last_track,
+                startup_ui_state.last_position_seconds);
+        }
+        if (should_play && !display_model.is_playing()) {
             display_model.play();
         }
     }
@@ -416,6 +496,13 @@ int main(int argc, char* argv[]) {
         // Update simulation time
         display_model.update(static_cast<double>(io.DeltaTime));
 
+        // Periodically persist active disc/track/position (every 5s)
+        static Uint64 last_persist_ticks = SDL_GetTicks();
+        if (now_ticks - last_persist_ticks >= 5000) {
+            last_persist_ticks = now_ticks;
+            persist_playback_state(display_model);
+        }
+
         // Display root window
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -512,6 +599,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Cleanup
+    persist_playback_state(display_model);
     display_model.eject_disc();
     mycds::gui::GetBrushedMetal().Shutdown();
     ImGui_ImplOpenGL3_Shutdown();

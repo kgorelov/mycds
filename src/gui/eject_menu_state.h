@@ -157,7 +157,14 @@ struct PersistentUiState {
     EjectMenuScreen last_eject_screen{EjectMenuScreen::Cd};
     std::string last_visited_dir{};
     std::string last_cd_rom{};
+    std::string last_source_path{};
+    bool last_source_is_device{false};
+    int last_track{1};
+    double last_position_seconds{0.0};
 };
+
+/// Parses a time string ("90", "45.5", "01:30", "01:30.5", "1:02:03") into seconds.
+[[nodiscard]] std::optional<double> parse_seek_time_seconds(std::string_view text);
 
 std::filesystem::path default_settings_path();
 AppSettings load_app_settings(const std::filesystem::path& path);

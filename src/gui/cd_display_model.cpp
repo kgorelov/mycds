@@ -221,6 +221,14 @@ const std::string& CdDisplayModel::playback_error() const noexcept {
     return playback_error_;
 }
 
+const std::string& CdDisplayModel::source_path() const noexcept {
+    return disc_layout_.sourcePath;
+}
+
+bool CdDisplayModel::source_is_device() const noexcept {
+    return !disc_layout_.sourcePath.empty() && disc_layout_.sourcePath.rfind("/dev/", 0) == 0;
+}
+
 void CdDisplayModel::apply_layout_metadata() {
     artist_name_ = !disc_layout_.discMetadata.performer.empty()
         ? disc_layout_.discMetadata.performer
@@ -868,6 +876,103 @@ void CdDisplayModel::seek_to_track_fraction(double fraction) {
         clamped * static_cast<double>(dur),
         0.0,
         std::max(0.0, static_cast<double>(dur) - 0.1));
+}
+
+void CdDisplayModel::seek_to_track_and_seconds(int track_number, double seconds) {
+    if (recording_ || tracks_.empty()) {
+        return;
+    }
+    const double clamped_sec = std::max(0.0, seconds);
+
+    if (has_real_source_ && controller_ && !disc_layout_.tracks.empty()) {
+        pending_seek_active_ = false;
+        const mycds::TrackInfo* target_trk = mycds::find_track_by_number(disc_layout_.tracks, track_number);
+        if (!target_trk || target_trk->type != mycds::TrackType::Audio) {
+            return;
+        }
+        const std::int64_t track_sectors = target_trk->endLba - target_trk->index01Lba;
+        if (track_sectors <= 0) {
+            return;
+        }
+        const std::int64_t offset_sectors = std::clamp(
+            static_cast<std::int64_t>(std::llround(clamped_sec * mycds::AudioFormat::kSectorsPerSecond)),
+            std::int64_t{0},
+            track_sectors - 1);
+        const std::int64_t target_lba = target_trk->index01Lba + offset_sectors;
+        try {
+            controller_->seekToLba(target_lba);
+            for (size_t i = 0; i < tracks_.size(); ++i) {
+                if (tracks_[i].number == track_number) {
+                    current_track_index_ = i;
+                    break;
+                }
+            }
+            track_elapsed_seconds_ =
+                static_cast<double>(offset_sectors) / mycds::AudioFormat::kSectorsPerSecond;
+            playback_error_.clear();
+        } catch (const std::exception& ex) {
+            playback_error_ = ex.what();
+        }
+        return;
+    }
+
+    jump_to_track(track_number);
+    if (clamped_sec > 0.0) {
+        const int dur = track_duration_seconds();
+        track_elapsed_seconds_ = std::min(clamped_sec, std::max(0.0, static_cast<double>(dur) - 0.1));
+    }
+}
+
+void CdDisplayModel::seek_to_disc_seconds(double seconds) {
+    if (recording_ || tracks_.empty()) {
+        return;
+    }
+    const double clamped_sec = std::max(0.0, seconds);
+
+    if (has_real_source_ && controller_ && !disc_layout_.tracks.empty()) {
+        pending_seek_active_ = false;
+        const int first_trk_num = first_playable_track_number();
+        const mycds::TrackInfo* first_trk = mycds::find_track_by_number(disc_layout_.tracks, first_trk_num);
+        const std::int64_t start_lba = first_trk ? first_trk->index01Lba : disc_layout_.discInfo.startLba;
+        const std::int64_t end_lba = mycds::compute_contiguous_audio_end_lba(disc_layout_.tracks, start_lba);
+        if (end_lba <= start_lba) {
+            return;
+        }
+        const std::int64_t offset_sectors = static_cast<std::int64_t>(
+            std::llround(clamped_sec * mycds::AudioFormat::kSectorsPerSecond));
+        const std::int64_t target_lba = std::clamp(start_lba + offset_sectors, start_lba, end_lba - 1);
+        try {
+            controller_->seekToLba(target_lba);
+            const auto pos = mycds::resolve_playback_position(
+                disc_layout_.discInfo, disc_layout_.tracks, target_lba, 0);
+            if (pos.trackNumber.has_value()) {
+                for (size_t i = 0; i < tracks_.size(); ++i) {
+                    if (tracks_[i].number == *pos.trackNumber) {
+                        current_track_index_ = i;
+                        break;
+                    }
+                }
+            }
+            track_elapsed_seconds_ = (pos.trackRelativeSectors >= 0)
+                ? (static_cast<double>(pos.trackRelativeSectors) / mycds::AudioFormat::kSectorsPerSecond)
+                : 0.0;
+            playback_error_.clear();
+        } catch (const std::exception& ex) {
+            playback_error_ = ex.what();
+        }
+        return;
+    }
+
+    double remaining = clamped_sec;
+    for (size_t i = 0; i < tracks_.size(); ++i) {
+        const double dur = static_cast<double>(tracks_[i].duration_seconds);
+        if (remaining < dur || i + 1 == tracks_.size()) {
+            current_track_index_ = i;
+            track_elapsed_seconds_ = std::min(remaining, std::max(0.0, dur - 0.1));
+            return;
+        }
+        remaining -= dur;
+    }
 }
 
 void CdDisplayModel::start_recording() {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <set>
@@ -880,6 +881,61 @@ bool save_app_settings(const std::filesystem::path& path, const AppSettings& set
     return out.good();
 }
 
+std::optional<double> parse_seek_time_seconds(std::string_view text) {
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
+        text.remove_suffix(1);
+    }
+    if (text.empty()) {
+        return std::nullopt;
+    }
+
+    auto parse_non_neg_double = [](std::string_view s) -> std::optional<double> {
+        if (s.empty() || s.front() == '-' || s.front() == '+') {
+            return std::nullopt;
+        }
+        try {
+            std::size_t idx = 0;
+            const std::string str(s);
+            const double val = std::stod(str, &idx);
+            if (idx != str.size() || val < 0.0) {
+                return std::nullopt;
+            }
+            return val;
+        } catch (...) {
+            return std::nullopt;
+        }
+    };
+
+    const std::size_t first_colon = text.find(':');
+    if (first_colon == std::string_view::npos) {
+        return parse_non_neg_double(text);
+    }
+
+    const std::size_t second_colon = text.find(':', first_colon + 1);
+    if (second_colon == std::string_view::npos) {
+        const auto mins = parse_non_neg_double(text.substr(0, first_colon));
+        const auto secs = parse_non_neg_double(text.substr(first_colon + 1));
+        if (!mins || !secs || *secs >= 60.0) {
+            return std::nullopt;
+        }
+        return (*mins * 60.0) + *secs;
+    }
+
+    if (text.find(':', second_colon + 1) != std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto hrs = parse_non_neg_double(text.substr(0, first_colon));
+    const auto mins = parse_non_neg_double(text.substr(first_colon + 1, second_colon - first_colon - 1));
+    const auto secs = parse_non_neg_double(text.substr(second_colon + 1));
+    if (!hrs || !mins || !secs || *mins >= 60.0 || *secs >= 60.0) {
+        return std::nullopt;
+    }
+    return (*hrs * 3600.0) + (*mins * 60.0) + *secs;
+}
+
 PersistentUiState load_ui_state(const std::filesystem::path& path) {
     PersistentUiState state;
     std::ifstream in(path);
@@ -890,6 +946,46 @@ PersistentUiState load_ui_state(const std::filesystem::path& path) {
     std::ostringstream ss;
     ss << in.rdbuf();
     const std::string content = ss.str();
+
+    auto parse_bool_key = [&](const std::string& key, bool default_val) {
+        const auto pos = content.find("\"" + key + "\"");
+        if (pos == std::string::npos) {
+            return default_val;
+        }
+        const auto colon = content.find(':', pos);
+        if (colon == std::string::npos) {
+            return default_val;
+        }
+        const auto newline_pos = content.find('\n', colon);
+        const auto end_pos = (newline_pos == std::string::npos) ? content.size() : newline_pos;
+        const std::string slice = content.substr(colon, end_pos - colon);
+        if (slice.find("true") != std::string::npos) {
+            return true;
+        }
+        if (slice.find("false") != std::string::npos) {
+            return false;
+        }
+        return default_val;
+    };
+
+    auto parse_double_key = [&](const std::string& key, double default_val) {
+        const auto pos = content.find("\"" + key + "\"");
+        if (pos == std::string::npos) {
+            return default_val;
+        }
+        const auto colon = content.find(':', pos);
+        if (colon == std::string::npos) {
+            return default_val;
+        }
+        const auto newline_pos = content.find('\n', colon);
+        const auto end_pos = (newline_pos == std::string::npos) ? content.size() : newline_pos;
+        std::string slice = content.substr(colon + 1, end_pos - (colon + 1));
+        try {
+            return std::stod(slice);
+        } catch (...) {
+            return default_val;
+        }
+    };
 
     const std::string screen_str = parse_json_string_key(content, "last_eject_screen", "cd");
     if (screen_str == "image_file") {
@@ -908,6 +1004,10 @@ PersistentUiState load_ui_state(const std::filesystem::path& path) {
 
     state.last_visited_dir = parse_json_string_key(content, "last_visited_dir", "");
     state.last_cd_rom = parse_json_string_key(content, "last_cd_rom", "");
+    state.last_source_path = parse_json_string_key(content, "last_source_path", "");
+    state.last_source_is_device = parse_bool_key("last_source_is_device", false);
+    state.last_track = std::max(1, static_cast<int>(std::llround(parse_double_key("last_track", 1.0))));
+    state.last_position_seconds = std::max(0.0, parse_double_key("last_position_seconds", 0.0));
     return state;
 }
 
@@ -950,7 +1050,11 @@ bool save_ui_state(const std::filesystem::path& path, const PersistentUiState& s
     out << "{\n"
         << "  \"last_eject_screen\": \"" << screen_str << "\",\n"
         << "  \"last_visited_dir\": \"" << escape_json_string(state.last_visited_dir) << "\",\n"
-        << "  \"last_cd_rom\": \"" << escape_json_string(state.last_cd_rom) << "\"\n"
+        << "  \"last_cd_rom\": \"" << escape_json_string(state.last_cd_rom) << "\",\n"
+        << "  \"last_source_path\": \"" << escape_json_string(state.last_source_path) << "\",\n"
+        << "  \"last_source_is_device\": " << (state.last_source_is_device ? "true" : "false") << ",\n"
+        << "  \"last_track\": " << state.last_track << ",\n"
+        << "  \"last_position_seconds\": " << state.last_position_seconds << "\n"
         << "}\n";
     return out.good();
 }

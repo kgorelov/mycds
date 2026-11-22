@@ -790,7 +790,8 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
             : -1;
 
         const ImU32 seg_lit_core = is_rec ? kRedLitCore : kAmberLitCore;
-        const ImU32 seg_lit_glow = is_rec ? kRedLitGlow : kAmberLitGlow;
+        const ImU32 seg_glow_outer = is_rec ? IM_COL32(230, 40, 30, 45) : IM_COL32(255, 110, 0, 45);
+        const ImU32 seg_glow_inner = is_rec ? IM_COL32(230, 40, 30, 120) : IM_COL32(255, 130, 0, 120);
         const ImU32 seg_unlit = is_rec ? kRedUnlit : kAmberUnlit;
 
         for (int i = 0; i < kProgressSegments; ++i) {
@@ -801,10 +802,14 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
             const bool is_hover_marker = (i == hover_seg);
 
             if (is_lit) {
-                draw_list->AddRect(s_min, s_max, seg_lit_glow, 1.0f, 0, 4.0f);
+                draw_list->AddRect(
+                    ImVec2(s_min.x - 1.5f, s_min.y - 1.5f),
+                    ImVec2(s_max.x + 1.5f, s_max.y + 1.5f),
+                    seg_glow_outer, 2.0f, 0, 4.0f);
+                draw_list->AddRect(s_min, s_max, seg_glow_inner, 1.5f, 0, 4.0f);
                 draw_list->AddRectFilled(s_min, s_max, seg_lit_core, 1.0f);
             } else if (is_hover_marker) {
-                draw_list->AddRect(s_min, s_max, seg_lit_glow, 1.0f, 0, 3.0f);
+                draw_list->AddRect(s_min, s_max, seg_glow_inner, 1.5f, 0, 3.0f);
                 draw_list->AddRectFilled(s_min, s_max, IM_COL32(180, 115, 20, 220), 1.0f);
             } else {
                 draw_list->AddRectFilled(s_min, s_max, seg_unlit, 1.0f);

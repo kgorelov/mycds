@@ -736,14 +736,35 @@ TEST(UiStateTests, PersistenceRoundTrip) {
     saved.last_eject_screen = EjectMenuScreen::ImageFile;
     saved.last_visited_dir = "/tmp/music/Pink Floyd \"Wish\"";
     saved.last_cd_rom = "/dev/sr1";
+    saved.last_source_path = "/tmp/music/album.cue";
+    saved.last_source_is_device = false;
+    saved.last_track = 4;
+    saved.last_position_seconds = 123.5;
     EXPECT_TRUE(save_ui_state(state_path, saved));
 
     const PersistentUiState loaded = load_ui_state(state_path);
     EXPECT_EQ(loaded.last_eject_screen, EjectMenuScreen::ImageFile);
     EXPECT_EQ(loaded.last_visited_dir, "/tmp/music/Pink Floyd \"Wish\"");
     EXPECT_EQ(loaded.last_cd_rom, "/dev/sr1");
+    EXPECT_EQ(loaded.last_source_path, "/tmp/music/album.cue");
+    EXPECT_FALSE(loaded.last_source_is_device);
+    EXPECT_EQ(loaded.last_track, 4);
+    EXPECT_NEAR(loaded.last_position_seconds, 123.5, 1e-3);
 
     std::filesystem::remove_all(state_path.parent_path(), ec);
+}
+
+TEST(UiStateTests, ParseSeekTimeSeconds) {
+    EXPECT_DOUBLE_EQ(parse_seek_time_seconds("0").value(), 0.0);
+    EXPECT_DOUBLE_EQ(parse_seek_time_seconds("90").value(), 90.0);
+    EXPECT_DOUBLE_EQ(parse_seek_time_seconds("42.5").value(), 42.5);
+    EXPECT_DOUBLE_EQ(parse_seek_time_seconds("01:30").value(), 90.0);
+    EXPECT_DOUBLE_EQ(parse_seek_time_seconds("2:05.5").value(), 125.5);
+    EXPECT_DOUBLE_EQ(parse_seek_time_seconds("1:02:03").value(), 3723.0);
+    EXPECT_FALSE(parse_seek_time_seconds("").has_value());
+    EXPECT_FALSE(parse_seek_time_seconds("-5").has_value());
+    EXPECT_FALSE(parse_seek_time_seconds("01:75").has_value());
+    EXPECT_FALSE(parse_seek_time_seconds("abc").has_value());
 }
 
 TEST_F(CdControlsWidgetTest, RenderEmptyDeckStateHeadless) {

@@ -573,6 +573,17 @@ TEST(CdDisplayModelTests, RealPlaybackControllerIntegrationWithCueImage) {
     EXPECT_EQ(model.current_track_number(), 2);
     EXPECT_GE(model.track_elapsed_seconds(), 0.45);
 
+    // Seek to track 1 + 0.4s, then global disc 1.4s (into track 2 at ~0.4s)
+    model.seek_to_track_and_seconds(1, 0.4);
+    model.update(0.01);
+    EXPECT_EQ(model.current_track_number(), 1);
+    EXPECT_GE(model.track_elapsed_seconds(), 0.35);
+
+    model.seek_to_disc_seconds(1.4);
+    model.update(0.01);
+    EXPECT_EQ(model.current_track_number(), 2);
+    EXPECT_GE(model.track_elapsed_seconds(), 0.35);
+
     // Pause zeroes meter levels immediately
     model.pause();
     EXPECT_FALSE(model.is_playing());

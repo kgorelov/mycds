@@ -92,6 +92,8 @@ public:
     [[nodiscard]] bool has_disc() const noexcept;
     [[nodiscard]] bool has_real_source() const noexcept;
     [[nodiscard]] const std::string& playback_error() const noexcept;
+    [[nodiscard]] const std::string& source_path() const noexcept;
+    [[nodiscard]] bool source_is_device() const noexcept;
 
     void update(double delta_time_seconds);
 
@@ -103,6 +105,8 @@ public:
     void seek_forward(double seconds);
     void seek_backward(double seconds);
     void seek_to_track_fraction(double fraction);
+    void seek_to_track_and_seconds(int track_number, double seconds);
+    void seek_to_disc_seconds(double seconds);
 
     void start_recording();
     void stop_recording();
