@@ -222,72 +222,37 @@ int main(int argc, char* argv[]) {
         mycds::gui::load_ui_state(mycds::gui::default_ui_state_path());
     display_model.set_active_eject_screen(startup_ui_state.last_eject_screen);
 
-    bool cli_load_failed = false;
-    bool resumed_from_state = false;
+    const bool should_play = startup_settings.play_when_started && !force_stopped;
     if (cli_source_path.has_value()) {
         const bool is_dev = cli_source_type_explicit
             ? cli_source_is_device
             : (cli_source_path->rfind("/dev/", 0) == 0);
-        try {
-            auto src = is_dev
-                ? mycds::open_physical_cd_source(*cli_source_path)
-                : mycds::open_image_source(*cli_source_path);
-            std::string err;
-            if (!display_model.open_disc_source(std::move(src), &err)) {
-                std::cerr << "Failed to open '" << *cli_source_path << "': " << err << '\n';
-                cli_load_failed = true;
-            }
-        } catch (const std::exception& ex) {
-            std::cerr << "Failed to open '" << *cli_source_path << "': " << ex.what() << '\n';
-            cli_load_failed = true;
-        }
+        display_model.open_source_async(mycds::gui::AsyncOpenRequest{
+            .path = *cli_source_path,
+            .is_device = is_dev,
+            .auto_play = should_play,
+            .initial_track = cli_track,
+            .initial_seek_seconds = cli_seek_seconds,
+            .seek_is_disc_global = !cli_track.has_value() && cli_seek_seconds.has_value(),
+        });
     } else if (!startup_ui_state.last_source_path.empty()) {
-        try {
-            auto src = startup_ui_state.last_source_is_device
-                ? mycds::open_physical_cd_source(startup_ui_state.last_source_path)
-                : mycds::open_image_source(startup_ui_state.last_source_path);
-            std::string err;
-            if (display_model.open_disc_source(std::move(src), &err)) {
-                resumed_from_state = true;
-            } else {
-                std::cerr << "Warning: Could not restore previous disc '"
-                          << startup_ui_state.last_source_path << "': " << err << '\n';
-            }
-        } catch (const std::exception& ex) {
-            std::cerr << "Warning: Could not restore previous disc '"
-                      << startup_ui_state.last_source_path << "': " << ex.what() << '\n';
+        std::optional<int> init_track = cli_track.has_value()
+            ? cli_track
+            : std::optional<int>(startup_ui_state.last_track);
+        std::optional<double> init_seek = cli_seek_seconds.has_value()
+            ? cli_seek_seconds
+            : std::optional<double>(startup_ui_state.last_position_seconds);
+        if (!cli_track.has_value() && cli_seek_seconds.has_value()) {
+            init_track.reset();
         }
-    }
-
-    if (cli_load_failed) {
-        display_model.eject_disc();
-        mycds::gui::GetBrushedMetal().Shutdown();
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplSDL3_Shutdown();
-        ImGui::DestroyContext();
-        SDL_GL_DestroyContext(gl_context);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
-
-    if (display_model.has_real_source()) {
-        const bool should_play = startup_settings.play_when_started && !force_stopped;
-        if (!should_play) {
-            display_model.stop();
-        }
-        if (cli_track.has_value()) {
-            display_model.seek_to_track_and_seconds(*cli_track, cli_seek_seconds.value_or(0.0));
-        } else if (cli_seek_seconds.has_value()) {
-            display_model.seek_to_disc_seconds(*cli_seek_seconds);
-        } else if (resumed_from_state) {
-            display_model.seek_to_track_and_seconds(
-                startup_ui_state.last_track,
-                startup_ui_state.last_position_seconds);
-        }
-        if (should_play && !display_model.is_playing()) {
-            display_model.play();
-        }
+        display_model.open_source_async(mycds::gui::AsyncOpenRequest{
+            .path = startup_ui_state.last_source_path,
+            .is_device = startup_ui_state.last_source_is_device,
+            .auto_play = should_play,
+            .initial_track = init_track,
+            .initial_seek_seconds = init_seek,
+            .seek_is_disc_global = !cli_track.has_value() && cli_seek_seconds.has_value(),
+        });
     }
 
     bool running = true;
@@ -326,7 +291,9 @@ int main(int argc, char* argv[]) {
     while (running) {
         const Uint64 now_ticks = SDL_GetTicks();
         const bool user_recently_active = (now_ticks - last_user_activity_ticks < kInteractiveGracePeriodMs);
-        const bool is_active_playback = display_model.is_playing() || display_model.is_recording();
+        const bool is_active_playback = display_model.is_playing() ||
+                                        display_model.is_recording() ||
+                                        display_model.is_loading_disc();
 
         SDL_Event event;
         bool had_events = false;

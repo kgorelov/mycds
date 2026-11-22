@@ -206,20 +206,14 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
     auto load_drive = [&](const mycds::CdDriveInfo& drv) {
         GetPersistentUiState().last_cd_rom = drv.devicePath;
         SavePersistentUiState();
-        try {
-            auto source = mycds::open_physical_cd_source(drv.devicePath);
-            std::string err;
-            if (!model.open_disc_source(std::move(source), &err)) {
-                state.status_message = "Failed to load CD: " + err;
-                state.status_is_error = true;
-            } else {
-                state.status_message.clear();
-                state.status_is_error = false;
-            }
-        } catch (const std::exception& ex) {
-            state.status_message = std::string("Failed to load CD: ") + ex.what();
-            state.status_is_error = true;
-        }
+        state.status_message.clear();
+        state.status_is_error = false;
+        model.open_source_async(AsyncOpenRequest{
+            .path = drv.devicePath,
+            .is_device = true,
+            .auto_play = model.app_settings().auto_play_on_disc_load,
+        });
+        model.close_eject_menu();
     };
 
     if (!state.initialized) {
@@ -742,17 +736,13 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
     }
 
     auto try_load_selected = [&](const std::filesystem::path& file_path) {
-        try {
-            auto source = mycds::open_image_source(file_path.string());
-            std::string err;
-            if (!model.open_disc_source(std::move(source), &err)) {
-                browser.set_error_message("Failed to load image: " + err);
-            } else {
-                browser.clear_error_message();
-            }
-        } catch (const std::exception& ex) {
-            browser.set_error_message(std::string("Failed to load image: ") + ex.what());
-        }
+        browser.clear_error_message();
+        model.open_source_async(AsyncOpenRequest{
+            .path = file_path.string(),
+            .is_device = false,
+            .auto_play = model.app_settings().auto_play_on_disc_load,
+        });
+        model.close_eject_menu();
     };
 
     const bool has_parent = browser.current_dir().has_parent_path() &&

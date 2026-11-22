@@ -23,6 +23,15 @@ struct CdDisplayModel::AsyncCddbResult {
     mycds::MetadataRecord record{};
 };
 
+struct CdDisplayModel::AsyncOpenResult {
+    std::uint64_t generation{0};
+    bool ready{false};
+    bool success{false};
+    std::string error_message{};
+    std::unique_ptr<mycds::PlaybackController> controller{};
+    mycds::DiscLayout layout{};
+};
+
 namespace {
 
 std::filesystem::path physical_cd_cache_sidecar_path(const mycds::DiscLayout& layout) {
@@ -77,6 +86,7 @@ CdDisplayModel::CdDisplayModel(mycds::PlaybackControllerConfig controller_config
 }
 
 CdDisplayModel::~CdDisplayModel() {
+    cancel_async_open();
     cancel_async_cddb_lookup();
     if (controller_) {
         controller_->closeSource();
@@ -174,6 +184,216 @@ bool CdDisplayModel::open_disc_source(
     }
 
     return true;
+}
+
+void CdDisplayModel::cancel_async_open() noexcept {
+    open_generation_.fetch_add(1, std::memory_order_release);
+    if (open_thread_.joinable()) {
+        open_thread_.join();
+    }
+    std::lock_guard<std::mutex> lock(open_mutex_);
+    open_result_.reset();
+    loading_disc_ = false;
+    loading_source_path_.clear();
+}
+
+void CdDisplayModel::open_source_async(const AsyncOpenRequest& request) {
+    cancel_async_open();
+    cancel_async_cddb_lookup();
+    eject_disc();
+
+    if (request.path.empty()) {
+        playback_error_ = "No disc source path provided";
+        return;
+    }
+
+    loading_disc_ = true;
+    loading_source_path_ = request.path;
+    playback_error_.clear();
+
+    const std::uint64_t gen = open_generation_.load(std::memory_order_acquire);
+    const mycds::PlaybackControllerConfig cfg = controller_config_;
+    const double vol = volume_;
+    const double bal = balance_;
+    const bool single_trk = (repeat_mode_ == RepeatMode::Track || shuffle_);
+
+    {
+        std::lock_guard<std::mutex> lock(open_mutex_);
+        open_result_ = std::make_unique<AsyncOpenResult>();
+        open_result_->generation = gen;
+    }
+
+    open_thread_ = std::thread([this, gen, request, cfg, vol, bal, single_trk]() {
+        auto result = std::make_unique<AsyncOpenResult>();
+        result->generation = gen;
+        result->ready = true;
+
+        try {
+            auto src = request.is_device
+                ? mycds::open_physical_cd_source(request.path)
+                : mycds::open_image_source(request.path);
+
+            if (open_generation_.load(std::memory_order_acquire) != gen) {
+                return;
+            }
+
+            auto ctrl = std::make_unique<mycds::PlaybackController>(cfg);
+            ctrl->openSource(std::move(src));
+            mycds::DiscLayout layout = ctrl->getDiscLayout();
+
+            try {
+                std::filesystem::path sidecar = mycds::MetadataStore::defaultSidecarPath(layout);
+                if (!mycds::MetadataStore::exists(sidecar) &&
+                    layout.sourcePath.rfind("/dev/", 0) == 0) {
+                    sidecar = physical_cd_cache_sidecar_path(layout);
+                }
+                if (mycds::MetadataStore::exists(sidecar)) {
+                    const auto rec = mycds::MetadataStore::loadSidecar(sidecar);
+                    mycds::MetadataMatcher::applyToLayout(layout, rec);
+                    ctrl->updateMetadata(layout.discMetadata, layout.trackMetadata);
+                }
+            } catch (...) {
+            }
+
+            ctrl->setVolume(vol);
+            ctrl->setBalance(bal);
+            ctrl->setSingleTrackMode(single_trk);
+
+            if (request.initial_track.has_value()) {
+                const double sec = std::max(0.0, request.initial_seek_seconds.value_or(0.0));
+                if (const mycds::TrackInfo* trk =
+                        mycds::find_track_by_number(layout.tracks, *request.initial_track);
+                    trk && trk->type == mycds::TrackType::Audio) {
+                    const std::int64_t trk_secs = trk->endLba - trk->index01Lba;
+                    if (trk_secs > 0) {
+                        const std::int64_t off = std::clamp(
+                            static_cast<std::int64_t>(std::llround(sec * mycds::AudioFormat::kSectorsPerSecond)),
+                            std::int64_t{0},
+                            trk_secs - 1);
+                        ctrl->seekToLba(trk->index01Lba + off);
+                    }
+                }
+            } else if (request.initial_seek_seconds.has_value() && request.seek_is_disc_global) {
+                const double sec = std::max(0.0, *request.initial_seek_seconds);
+                std::int64_t start_lba = layout.discInfo.startLba;
+                for (const auto& t : layout.tracks) {
+                    if (t.type == mycds::TrackType::Audio) {
+                        start_lba = t.index01Lba;
+                        break;
+                    }
+                }
+                const std::int64_t end_lba =
+                    mycds::compute_contiguous_audio_end_lba(layout.tracks, start_lba);
+                if (end_lba > start_lba) {
+                    const std::int64_t off = static_cast<std::int64_t>(
+                        std::llround(sec * mycds::AudioFormat::kSectorsPerSecond));
+                    ctrl->seekToLba(std::clamp(start_lba + off, start_lba, end_lba - 1));
+                }
+            }
+
+            if (open_generation_.load(std::memory_order_acquire) != gen) {
+                ctrl->closeSource();
+                return;
+            }
+
+            if (request.auto_play) {
+                ctrl->play();
+            }
+
+            result->success = true;
+            result->controller = std::move(ctrl);
+            result->layout = std::move(layout);
+        } catch (const std::exception& ex) {
+            result->success = false;
+            result->error_message = ex.what();
+        }
+
+        std::lock_guard<std::mutex> lock(open_mutex_);
+        if (open_result_ && open_result_->generation == gen) {
+            open_result_ = std::move(result);
+        }
+    });
+}
+
+void CdDisplayModel::poll_async_open() {
+    std::unique_ptr<AsyncOpenResult> completed;
+    {
+        std::lock_guard<std::mutex> lock(open_mutex_);
+        if (open_result_ && open_result_->ready) {
+            completed = std::move(open_result_);
+        }
+    }
+    if (!completed) {
+        return;
+    }
+
+    if (open_thread_.joinable()) {
+        open_thread_.join();
+    }
+
+    if (completed->generation != open_generation_.load(std::memory_order_acquire)) {
+        if (completed->controller) {
+            completed->controller->closeSource();
+        }
+        return;
+    }
+
+    loading_disc_ = false;
+    loading_source_path_.clear();
+
+    if (!completed->success || !completed->controller) {
+        playback_error_ = completed->error_message;
+        has_real_source_ = false;
+        playing_ = false;
+        return;
+    }
+
+    if (controller_) {
+        controller_->closeSource();
+    }
+    controller_ = std::move(completed->controller);
+    disc_layout_ = std::move(completed->layout);
+    has_real_source_ = true;
+    playback_error_.clear();
+
+    tracks_.clear();
+    tracks_.reserve(disc_layout_.tracks.size());
+    for (const auto& trk : disc_layout_.tracks) {
+        const std::int64_t sectors = std::max<std::int64_t>(0, trk.endLba - trk.index01Lba);
+        const int duration_sec = static_cast<int>(sectors / mycds::AudioFormat::kSectorsPerSecond);
+        tracks_.push_back(TrackInfo{trk.number, duration_sec, {}});
+    }
+
+    apply_layout_metadata();
+
+    const auto st = controller_->status();
+    playing_ = (st.state == mycds::PlaybackState::Playing);
+    current_track_index_ = 0;
+    if (st.position.trackNumber.has_value()) {
+        for (size_t i = 0; i < tracks_.size(); ++i) {
+            if (tracks_[i].number == *st.position.trackNumber) {
+                current_track_index_ = i;
+                break;
+            }
+        }
+    }
+    track_elapsed_seconds_ = (st.position.trackRelativeSectors >= 0)
+        ? (static_cast<double>(st.position.trackRelativeSectors) / mycds::AudioFormat::kSectorsPerSecond)
+        : 0.0;
+    reset_volume_levels();
+
+    if (disc_layout_.discMetadata.title.empty() &&
+        connectivity_ == ConnectivityStatus::Connected) {
+        start_async_cddb_lookup();
+    }
+}
+
+bool CdDisplayModel::is_loading_disc() const noexcept {
+    return loading_disc_;
+}
+
+const std::string& CdDisplayModel::loading_source_path() const noexcept {
+    return loading_source_path_;
 }
 
 void CdDisplayModel::eject_disc() noexcept {
@@ -453,6 +673,8 @@ void CdDisplayModel::update(double delta_time_seconds) {
         return;
     }
     uptime_seconds_ += delta_time_seconds;
+
+    poll_async_open();
 
     if (has_real_source_ && controller_) {
         poll_async_cddb_lookup();

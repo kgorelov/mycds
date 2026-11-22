@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -72,6 +73,15 @@ struct AppSettings {
     LibraryViewMode library_view{LibraryViewMode::List};
 };
 
+struct AsyncOpenRequest {
+    std::string path{};
+    bool is_device{false};
+    bool auto_play{true};
+    std::optional<int> initial_track{};
+    std::optional<double> initial_seek_seconds{};
+    bool seek_is_disc_global{false};
+};
+
 class CdDisplayModel {
 public:
     CdDisplayModel();
@@ -86,11 +96,14 @@ public:
     bool open_disc_source(
         std::unique_ptr<mycds::DiscSource> source,
         std::string* out_error = nullptr);
+    void open_source_async(const AsyncOpenRequest& request);
     void eject_disc() noexcept;
     void clear_disc() noexcept;
 
     [[nodiscard]] bool has_disc() const noexcept;
     [[nodiscard]] bool has_real_source() const noexcept;
+    [[nodiscard]] bool is_loading_disc() const noexcept;
+    [[nodiscard]] const std::string& loading_source_path() const noexcept;
     [[nodiscard]] const std::string& playback_error() const noexcept;
     [[nodiscard]] const std::string& source_path() const noexcept;
     [[nodiscard]] bool source_is_device() const noexcept;
@@ -218,10 +231,21 @@ private:
     std::atomic<std::uint64_t> cddb_generation_{0};
     std::unique_ptr<AsyncCddbResult> cddb_result_{};
 
+    // Asynchronous source open state
+    struct AsyncOpenResult;
+    bool loading_disc_{false};
+    std::string loading_source_path_{};
+    std::mutex open_mutex_{};
+    std::thread open_thread_{};
+    std::atomic<std::uint64_t> open_generation_{0};
+    std::unique_ptr<AsyncOpenResult> open_result_{};
+
     void apply_layout_metadata();
     void start_async_cddb_lookup();
     void cancel_async_cddb_lookup() noexcept;
     void poll_async_cddb_lookup();
+    void cancel_async_open() noexcept;
+    void poll_async_open();
     void update_vu_ballistics(double target_left, double target_right, double dt);
     [[nodiscard]] int first_playable_track_number() const noexcept;
     [[nodiscard]] int pick_random_playable_track() const noexcept;

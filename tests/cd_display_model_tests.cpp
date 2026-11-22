@@ -657,3 +657,65 @@ TEST(CdDisplayModelTests, RepeatOneKeepsPlayingCurrentTrack) {
     model.eject_disc();
     fs::remove_all(temp_dir, ec);
 }
+
+TEST(CdDisplayModelTests, AsyncOpenLoadsCueImageWithoutBlockingCaller) {
+    namespace fs = std::filesystem;
+    const fs::path temp_dir = fs::temp_directory_path() / "mycds_display_model_async_open_test";
+    std::error_code ec;
+    fs::remove_all(temp_dir, ec);
+    fs::create_directories(temp_dir, ec);
+
+    const fs::path bin_path = temp_dir / "async.bin";
+    const fs::path cue_path = temp_dir / "async.cue";
+
+    {
+        std::ofstream bin_out(bin_path, std::ios::binary);
+        const auto pcm = mycds::generate_sine_wave_pcm(440.0, 100, 0.3);
+        bin_out.write(
+            reinterpret_cast<const char*>(pcm.data()),
+            static_cast<std::streamsize>(pcm.size()));
+    }
+    {
+        std::ofstream cue_out(cue_path);
+        cue_out << "FILE \"async.bin\" BINARY\n"
+                << "  TRACK 01 AUDIO\n"
+                << "    INDEX 01 00:00:00\n"
+                << "  TRACK 02 AUDIO\n"
+                << "    INDEX 01 00:00:50\n";
+    }
+
+    mycds::PlaybackControllerConfig cfg;
+    cfg.audioConfig.ringBufferSectors = 40;
+    cfg.audioConfig.preferredDriver = "dummy";
+    cfg.readChunkSectors = 4;
+    cfg.prebufferSectors = 4;
+
+    CdDisplayModel model(cfg);
+    model.clear_disc();
+    model.open_source_async(AsyncOpenRequest{
+        .path = cue_path.string(),
+        .is_device = false,
+        .auto_play = true,
+        .initial_track = 2,
+        .initial_seek_seconds = 0.2,
+    });
+    EXPECT_TRUE(model.is_loading_disc());
+
+    bool loaded = false;
+    for (int i = 0; i < 100; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        model.update(0.01);
+        if (!model.is_loading_disc() && model.has_real_source()) {
+            loaded = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(loaded);
+    EXPECT_EQ(model.total_tracks(), 2);
+    EXPECT_EQ(model.current_track_number(), 2);
+    EXPECT_TRUE(model.is_playing());
+    EXPECT_GE(model.track_elapsed_seconds(), 0.15);
+
+    model.eject_disc();
+    fs::remove_all(temp_dir, ec);
+}
