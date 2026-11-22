@@ -811,6 +811,28 @@ AppSettings load_app_settings(const std::filesystem::path& path) {
         return default_val;
     };
     settings.file_browser_view = parse_file_browser_view(settings.file_browser_view);
+
+    auto parse_library_view = [&](LibraryViewMode default_val) {
+        const auto pos = content.find("\"library_view\"");
+        if (pos == std::string::npos) {
+            return default_val;
+        }
+        const auto colon = content.find(':', pos);
+        if (colon == std::string::npos) {
+            return default_val;
+        }
+        const auto newline_pos = content.find('\n', colon);
+        const auto line_end = (newline_pos == std::string::npos) ? content.size() : newline_pos;
+        const std::string line = content.substr(colon, line_end - colon);
+        if (line.find("\"covers\"") != std::string::npos) {
+            return LibraryViewMode::Covers;
+        }
+        if (line.find("\"list\"") != std::string::npos) {
+            return LibraryViewMode::List;
+        }
+        return default_val;
+    };
+    settings.library_view = parse_library_view(settings.library_view);
     return settings;
 }
 
@@ -843,6 +865,8 @@ bool save_app_settings(const std::filesystem::path& path, const AppSettings& set
 
     const char* browser_view_str =
         (settings.file_browser_view == FileBrowserViewMode::Icons) ? "icons" : "list";
+    const char* library_view_str =
+        (settings.library_view == LibraryViewMode::Covers) ? "covers" : "list";
 
     out << "{\n"
         << "  \"play_when_started\": " << (settings.play_when_started ? "true" : "false") << ",\n"
@@ -850,7 +874,8 @@ bool save_app_settings(const std::filesystem::path& path, const AppSettings& set
         << "  \"layout_mode\": \"" << layout_str << "\",\n"
         << "  \"show_playlist\": " << (settings.show_playlist ? "true" : "false") << ",\n"
         << "  \"show_cd_cover\": " << (settings.show_cd_cover ? "true" : "false") << ",\n"
-        << "  \"file_browser_view\": \"" << browser_view_str << "\"\n"
+        << "  \"file_browser_view\": \"" << browser_view_str << "\",\n"
+        << "  \"library_view\": \"" << library_view_str << "\"\n"
         << "}\n";
     return out.good();
 }

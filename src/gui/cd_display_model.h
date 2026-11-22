@@ -36,6 +36,11 @@ enum class FileBrowserViewMode {
     Icons
 };
 
+enum class LibraryViewMode {
+    List,
+    Covers
+};
+
 struct TrackInfo {
     int number{1};
     int duration_seconds{222};
@@ -56,6 +61,7 @@ struct AppSettings {
     bool show_playlist{true};
     bool show_cd_cover{true};
     FileBrowserViewMode file_browser_view{FileBrowserViewMode::List};
+    LibraryViewMode library_view{LibraryViewMode::List};
 };
 
 class CdDisplayModel {

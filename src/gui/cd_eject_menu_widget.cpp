@@ -1255,15 +1255,23 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
     ImGui::TextDisabled("Mock Library Catalog (search by artist, album, or track name):");
     ImGui::Spacing();
 
-    // Search + Filter + Sort toolbar
+    // Search + Filter + Sort + View Toggle toolbar
+    AppSettings settings = model.app_settings();
+    const bool is_cover_view = (settings.library_view == LibraryViewMode::Covers);
     const float avail_w = ImGui::GetContentRegionAvail().x;
     const float item_gap_x = ImGui::GetStyle().ItemSpacing.x;
-    const bool wrap_toolbar = (avail_w < 560.0f);
-    const float genre_w = wrap_toolbar ? std::max(120.0f, (avail_w - item_gap_x) * 0.45f) : 150.0f;
-    const float sort_w = wrap_toolbar ? std::max(140.0f, avail_w - genre_w - item_gap_x) : 175.0f;
+    constexpr float kViewBtnW = 34.0f;
+    const float view_btn_h = ImGui::GetFrameHeight();
+    const bool wrap_toolbar = (avail_w < 600.0f);
+    const float genre_w = wrap_toolbar
+        ? std::max(110.0f, (avail_w - kViewBtnW - 2.0f * item_gap_x) * 0.45f)
+        : 150.0f;
+    const float sort_w = wrap_toolbar
+        ? std::max(120.0f, avail_w - genre_w - kViewBtnW - 2.0f * item_gap_x)
+        : 175.0f;
     const float search_w = wrap_toolbar
         ? avail_w
-        : std::max(180.0f, avail_w - genre_w - sort_w - 2.0f * item_gap_x);
+        : std::max(160.0f, avail_w - genre_w - sort_w - kViewBtnW - 3.0f * item_gap_x);
 
     if (just_entered) {
         ImGui::SetWindowFocus();
@@ -1316,6 +1324,20 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
         ImGui::EndCombo();
     }
 
+    ImGui::SameLine();
+    const ImVec2 view_btn_pos = ImGui::GetCursorScreenPos();
+    const char* lib_view_tip = is_cover_view
+        ? "View: Covers (click for List)"
+        : "View: List (click for Covers)";
+    if (RenderHardwareIconButton("##LibViewToggle", view_btn_pos,
+                                 ImVec2(kViewBtnW, view_btn_h),
+                                 is_cover_view ? NavButtonIcon::ViewIcons : NavButtonIcon::ViewList,
+                                 lib_view_tip, is_cover_view)) {
+        settings.library_view = is_cover_view ? LibraryViewMode::List : LibraryViewMode::Covers;
+        model.set_app_settings(settings);
+        save_app_settings(default_settings_path(), settings);
+    }
+
     ImGui::Spacing();
 
     const auto matches = library.filtered_entries();
@@ -1351,13 +1373,129 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
         : total_body_h;
     const float albums_w = use_vertical_layout ? 0.0f : std::max(260.0f, avail_w * 0.54f);
 
-    // Matching albums list
+    // Matching albums list or cover grid
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
     ImGui::BeginChild("##LibAlbumList", ImVec2(albums_w, albums_h), true,
                       ImGuiWindowFlags_NoNavInputs);
     {
         if (matches.empty()) {
             ImGui::TextDisabled("No albums match your search/filter criteria.");
+        } else if (is_cover_view) {
+            constexpr float kMinCardW = 220.0f;
+            constexpr float kCardGap = 14.0f;
+            constexpr float kGridPad = 12.0f;
+            const float avail_grid_w = std::max(kMinCardW, ImGui::GetContentRegionAvail().x - 2.0f * kGridPad);
+            const int cover_cols = std::max(
+                1,
+                static_cast<int>((avail_grid_w + kCardGap) / (kMinCardW + kCardGap))
+            );
+            const float card_w = std::floor(
+                (avail_grid_w - static_cast<float>(cover_cols - 1) * kCardGap) / static_cast<float>(cover_cols)
+            );
+            const float case_size = std::min(card_w, 240.0f);
+            const float line_h = ImGui::GetTextLineHeight();
+            const float meta_h = (line_h + 2.0f) * 3.0f + 4.0f;
+            const float card_h = case_size + 8.0f + meta_h;
+
+            const ImVec2 grid_origin = ImGui::GetCursorPos();
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            const ImU32 title_col = IM_COL32(0, 230, 255, 255);
+            const ImU32 artist_col = IM_COL32(215, 222, 232, 255);
+            const ImU32 meta_col = IM_COL32(150, 160, 175, 255);
+
+            for (std::size_t i = 0; i < matches.size(); ++i) {
+                const auto* entry = matches[i];
+                const bool is_selected = (library.selected_index() == i);
+                const int col = static_cast<int>(i) % cover_cols;
+                const int row = static_cast<int>(i) / cover_cols;
+
+                ImGui::SetCursorPos(ImVec2(
+                    grid_origin.x + kGridPad + static_cast<float>(col) * (card_w + kCardGap),
+                    grid_origin.y + kGridPad + static_cast<float>(row) * (card_h + kCardGap)
+                ));
+                const ImVec2 card_min = ImGui::GetCursorScreenPos();
+                const ImVec2 card_max(card_min.x + card_w, card_min.y + card_h);
+
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::InvisibleButton("##LibCoverCard", ImVec2(card_w, card_h));
+                const bool hovered = ImGui::IsItemHovered();
+                const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+                const bool double_clicked = hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+                ImGui::PopID();
+
+                if (clicked) {
+                    library.set_selected_index(i);
+                }
+                if (double_clicked) {
+                    load_library_entry(*entry);
+                }
+                if (is_selected && scroll_to_selection) {
+                    ImGui::SetScrollHereY(0.5f);
+                }
+
+                // True 1:1 square CD case (cover art placeholder when no cover image is available)
+                const float case_x = card_min.x + (card_w - case_size) * 0.5f;
+                const ImVec2 case_min(case_x, card_min.y);
+                const ImVec2 case_max(case_x + case_size, card_min.y + case_size);
+                const ImU32 case_bg = is_selected
+                    ? IM_COL32(18, 28, 36, 255)
+                    : (hovered ? IM_COL32(20, 24, 30, 255) : IM_COL32(12, 15, 20, 255));
+                dl->AddRectFilled(case_min, case_max, case_bg, 4.0f);
+
+                // Jewel case spine on the left
+                const float spine_w = std::max(10.0f, case_size * 0.075f);
+                dl->AddRectFilled(case_min, ImVec2(case_min.x + spine_w, case_max.y),
+                                  IM_COL32(24, 29, 36, 255), 3.0f);
+                dl->AddLine(ImVec2(case_min.x + spine_w, case_min.y + 1.0f),
+                            ImVec2(case_min.x + spine_w, case_max.y - 1.0f),
+                            IM_COL32(70, 82, 96, 150), 1.0f);
+
+                // CD disc inside the case
+                const ImVec2 disc_center(
+                    case_min.x + spine_w + (case_size - spine_w) * 0.5f,
+                    case_min.y + case_size * 0.5f
+                );
+                const float disc_r = (case_size - spine_w) * 0.38f;
+                dl->AddCircleFilled(disc_center, disc_r, IM_COL32(22, 34, 44, 240), 48);
+                dl->AddCircle(disc_center, disc_r, IM_COL32(0, 210, 240, 160), 48, 1.6f);
+                dl->AddCircle(disc_center, disc_r * 0.66f, IM_COL32(0, 160, 195, 85), 36, 1.0f);
+                dl->AddCircle(disc_center, disc_r * 0.28f, IM_COL32(0, 210, 240, 130), 28, 1.2f);
+                dl->AddCircleFilled(disc_center, disc_r * 0.13f, IM_COL32(12, 15, 20, 255));
+
+                // Selection / hover outline directly on the square CD case
+                if (is_selected) {
+                    DrawDiffusedRectOutline(dl, case_min, case_max, 4.0f, kColCyanBright, 1.5f, true);
+                } else {
+                    dl->AddRect(case_min, case_max,
+                                hovered ? IM_COL32(105, 130, 155, 200) : IM_COL32(65, 78, 95, 160),
+                                4.0f, 0, 1.2f);
+                }
+
+                // Disc info underneath the square case: album, group/artist, year & genre
+                const ImVec2 text_clip_min(card_min.x, case_max.y + 8.0f);
+                const ImVec2 text_clip_max(card_max.x, card_max.y);
+                dl->PushClipRect(text_clip_min, text_clip_max, true);
+
+                ImVec2 line1_pos(text_clip_min.x, text_clip_min.y);
+                DrawHighlightedText(dl, line1_pos, entry->album, query_lower, title_col, kMatchGreenCol);
+
+                ImVec2 line2_pos(text_clip_min.x, text_clip_min.y + line_h + 2.0f);
+                DrawHighlightedText(dl, line2_pos, entry->artist, query_lower, artist_col, kMatchGreenCol);
+
+                char meta_buf[64];
+                std::snprintf(meta_buf, sizeof(meta_buf), "%d  |  %s", entry->year, entry->genre.c_str());
+                ImVec2 line3_pos(text_clip_min.x, text_clip_min.y + (line_h + 2.0f) * 2.0f);
+                DrawHighlightedText(dl, line3_pos, meta_buf, "", meta_col, kMatchGreenCol);
+
+                dl->PopClipRect();
+            }
+
+            const int total_rows = (static_cast<int>(matches.size()) + cover_cols - 1) / cover_cols;
+            ImGui::SetCursorPos(ImVec2(
+                grid_origin.x,
+                grid_origin.y + kGridPad + static_cast<float>(total_rows) * (card_h + kCardGap)
+            ));
+            ImGui::Dummy(ImVec2(1.0f, 1.0f));
         } else {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
@@ -1687,6 +1825,18 @@ void RenderSettingsScreen(CdDisplayModel& model) {
         changed = true;
     }
     ImGui::TextDisabled("    Default display mode (List or Icons) for the Image/File browser.");
+    ImGui::Spacing();
+
+    const char* library_view_items[] = {"List", "Covers"};
+    int library_view_idx = (settings.library_view == LibraryViewMode::Covers) ? 1 : 0;
+    ImGui::SetNextItemWidth(220.0f);
+    if (ImGui::Combo("Library view", &library_view_idx, library_view_items, 2)) {
+        settings.library_view = (library_view_idx == 1)
+            ? LibraryViewMode::Covers
+            : LibraryViewMode::List;
+        changed = true;
+    }
+    ImGui::TextDisabled("    Default display mode (List or Covers) for the CD Library.");
     ImGui::Spacing();
 
     if (changed) {
