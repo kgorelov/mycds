@@ -433,6 +433,20 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
     ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }
 
+struct ScopedSearchBarStyle {
+    ScopedSearchBarStyle() {
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.5f);
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.18f, 0.72f, 0.95f, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.08f, 0.11f, 0.14f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.10f, 0.15f, 0.20f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.12f, 0.18f, 0.25f, 1.0f));
+    }
+    ~ScopedSearchBarStyle() {
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar(1);
+    }
+};
+
 enum class NavButtonIcon {
     Home,
     Root,
@@ -725,10 +739,13 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
 
     // Path input bar
     ImGui::SetNextItemWidth(std::max(180.0f, avail_w - 86.0f));
-    if (ImGui::InputText("##BrowserPath", path_buf, sizeof(path_buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
-        browser.navigate_to(std::filesystem::path(path_buf));
-        parent_selected = false;
-        ImGui::SetWindowFocus("##ImageBrowserList");
+    {
+        ScopedSearchBarStyle search_style;
+        if (ImGui::InputText("##BrowserPath", path_buf, sizeof(path_buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            browser.navigate_to(std::filesystem::path(path_buf));
+            parent_selected = false;
+            ImGui::SetWindowFocus("##ImageBrowserList");
+        }
     }
     ImGui::SameLine();
     if (ImGui::Button("Go", ImVec2(72.0f, 0.0f))) {
@@ -1085,9 +1102,12 @@ void RenderLibraryScreen(CdDisplayModel& model) {
     const float avail_w = ImGui::GetContentRegionAvail().x;
     const float search_w = std::max(180.0f, avail_w * 0.36f);
     ImGui::SetNextItemWidth(search_w);
-    if (ImGui::InputTextWithHint("##LibSearch", "Search artist, album, or track...",
-                                 search_buf, sizeof(search_buf))) {
-        library.set_search_query(search_buf);
+    {
+        ScopedSearchBarStyle search_style;
+        if (ImGui::InputTextWithHint("##LibSearch", "Search artist, album, or track...",
+                                     search_buf, sizeof(search_buf))) {
+            library.set_search_query(search_buf);
+        }
     }
 
     ImGui::SameLine();
