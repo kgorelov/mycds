@@ -5,8 +5,25 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace mycds {
+
+struct CdDriveInfo {
+    std::string devicePath{};
+    std::string vendor{};
+    std::string model{};
+    bool hasDisc{false};
+    int trackCount{0};
+    int totalSeconds{0};
+    std::string statusText{};
+};
+
+/// Enumerates optical CD/DVD/BD drives visible to libcdio on the system.
+std::vector<CdDriveInfo> enumerate_cd_drives();
+
+/// Attempts to eject the media tray for the specified optical drive device.
+bool eject_cd_drive(const std::string& device_path);
 
 class PhysicalCdSource final : public DiscSource {
 public:

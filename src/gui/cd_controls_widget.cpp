@@ -1,0 +1,699 @@
+#include "cd_controls_widget.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "cd_brushed_metal.h"
+#include "cd_ui_style.h"
+#include "imgui.h"
+
+namespace mycds::gui {
+
+namespace {
+
+constexpr float kPi = 3.14159265358979323846f;
+
+// Long press seeking state tracking
+struct SeekPressTracker {
+    double press_start_time{0.0};
+    bool is_held{false};
+    bool did_long_press{false};
+};
+
+static SeekPressTracker s_prev_tracker;
+static SeekPressTracker s_next_tracker;
+
+// -----------------------------------------------------------------------------
+// Graphical Pictograms with Diffuse Backlighting and Centered Geometry
+// -----------------------------------------------------------------------------
+
+void DrawPlayPausePictogram(ImDrawList* draw_list, const ImVec2& center, bool is_playing, bool hovered, bool pressed) {
+    const bool play_bright = is_playing || pressed;
+    const bool pause_bright = !is_playing || pressed;
+
+    const ImU32 play_core = play_bright ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+    const ImU32 pause_core = pause_bright ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+
+    // Symmetric coordinates around center matching rewind chevron geometry (width: 9.5f, height: 20.0f)
+    // Play triangle on left: from center.x - 14.5f to center.x - 5.0f (width 9.5f, height [-10.0, +10.0])
+    const ImVec2 p1(center.x - 14.5f, center.y - 10.0f);
+    const ImVec2 p2(center.x - 5.0f, center.y);
+    const ImVec2 p3(center.x - 14.5f, center.y + 10.0f);
+    DrawDiffusedTriangle(draw_list, p1, p2, p3, play_core, play_bright);
+
+    // Pause bars on right: from center.x + 2.5f to center.x + 14.5f (height [-10.0, +10.0])
+    const ImVec2 b1_min(center.x + 2.5f, center.y - 10.0f);
+    const ImVec2 b1_max(center.x + 6.5f, center.y + 10.0f);
+    const ImVec2 b2_min(center.x + 10.5f, center.y - 10.0f);
+    const ImVec2 b2_max(center.x + 14.5f, center.y + 10.0f);
+
+    DrawDiffusedRect(draw_list, b1_min, b1_max, 1.2f, pause_core, pause_bright);
+    DrawDiffusedRect(draw_list, b2_min, b2_max, 1.2f, pause_core, pause_bright);
+}
+
+void DrawStopPictogram(ImDrawList* draw_list, const ImVec2& center, bool hovered, bool pressed) {
+    const bool is_bright = pressed || hovered;
+    const ImU32 core_col = pressed ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+
+    // Exactly centered 19x19 square: [-9.5, +9.5]
+    const ImVec2 min_pos(center.x - 9.5f, center.y - 9.5f);
+    const ImVec2 max_pos(center.x + 9.5f, center.y + 9.5f);
+
+    DrawDiffusedRect(draw_list, min_pos, max_pos, 2.0f, core_col, is_bright);
+}
+
+void DrawPrevPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_seeking, bool hovered, bool pressed) {
+    const bool is_active = pressed || is_seeking;
+    const ImU32 base_col = is_active ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+
+    // Seeking animation wave flowing leftwards: <<
+    float wave_q = 1.0f;
+    float wave_p = 1.0f;
+    float wave_bar = 1.0f;
+
+    if (is_seeking) {
+        const float anim_time = static_cast<float>(ImGui::GetTime());
+        const float phase = std::fmod(anim_time * 12.0f, 3.0f);
+        wave_q = (phase < 1.0f) ? 1.0f : 0.35f;
+        wave_p = (phase >= 1.0f && phase < 2.0f) ? 1.0f : 0.35f;
+        wave_bar = (phase >= 2.0f) ? 1.0f : 0.35f;
+    }
+
+    auto ModulateCol = [](ImU32 col, float factor) {
+        ImVec4 c = ImGui::ColorConvertU32ToFloat4(col);
+        c.w = std::clamp(c.w * factor, 0.2f, 1.0f);
+        return ImGui::ColorConvertFloat4ToU32(c);
+    };
+
+    const ImU32 col_q = ModulateCol(base_col, wave_q);
+    const ImU32 col_p = ModulateCol(base_col, wave_p);
+    const ImU32 col_bar = ModulateCol(base_col, wave_bar);
+
+    // Centered double chevron with end bar:
+    // Left end bar: [-14.0, -11.5]
+    const ImVec2 bar_min(center.x - 14.0f, center.y - 10.0f);
+    const ImVec2 bar_max(center.x - 11.5f, center.y + 10.0f);
+    DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, col_bar, is_active && wave_bar > 0.8f);
+
+    // Left chevron (p): tip at -9.5, base at 0.0
+    const ImVec2 p1(center.x, center.y - 10.0f);
+    const ImVec2 p2(center.x, center.y + 10.0f);
+    const ImVec2 p3(center.x - 9.5f, center.y);
+    DrawDiffusedTriangle(draw_list, p1, p2, p3, col_p, is_active && wave_p > 0.8f);
+
+    // Right chevron (q): tip at +4.5, base at +14.0
+    const ImVec2 q1(center.x + 14.0f, center.y - 10.0f);
+    const ImVec2 q2(center.x + 14.0f, center.y + 10.0f);
+    const ImVec2 q3(center.x + 4.5f, center.y);
+    DrawDiffusedTriangle(draw_list, q1, q2, q3, col_q, is_active && wave_q > 0.8f);
+}
+
+void DrawNextPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_seeking, bool hovered, bool pressed) {
+    const bool is_active = pressed || is_seeking;
+    const ImU32 base_col = is_active ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+
+    // Seeking animation wave flowing rightwards: >>
+    float wave_p = 1.0f;
+    float wave_q = 1.0f;
+    float wave_bar = 1.0f;
+
+    if (is_seeking) {
+        const float anim_time = static_cast<float>(ImGui::GetTime());
+        const float phase = std::fmod(anim_time * 12.0f, 3.0f);
+        wave_p = (phase < 1.0f) ? 1.0f : 0.35f;
+        wave_q = (phase >= 1.0f && phase < 2.0f) ? 1.0f : 0.35f;
+        wave_bar = (phase >= 2.0f) ? 1.0f : 0.35f;
+    }
+
+    auto ModulateCol = [](ImU32 col, float factor) {
+        ImVec4 c = ImGui::ColorConvertU32ToFloat4(col);
+        c.w = std::clamp(c.w * factor, 0.2f, 1.0f);
+        return ImGui::ColorConvertFloat4ToU32(c);
+    };
+
+    const ImU32 col_p = ModulateCol(base_col, wave_p);
+    const ImU32 col_q = ModulateCol(base_col, wave_q);
+    const ImU32 col_bar = ModulateCol(base_col, wave_bar);
+
+    // Exact symmetric mirror of Prev chevrons (matching width: 9.5f, height: 20.0f):
+    // Left chevron (p): base at -14.0, tip at -4.5
+    const ImVec2 p1(center.x - 14.0f, center.y - 10.0f);
+    const ImVec2 p2(center.x - 4.5f, center.y);
+    const ImVec2 p3(center.x - 14.0f, center.y + 10.0f);
+    DrawDiffusedTriangle(draw_list, p1, p2, p3, col_p, is_active && wave_p > 0.8f);
+
+    // Right chevron (q): base at 0.0, tip at +9.5
+    const ImVec2 q1(center.x, center.y - 10.0f);
+    const ImVec2 q2(center.x + 9.5f, center.y);
+    const ImVec2 q3(center.x, center.y + 10.0f);
+    DrawDiffusedTriangle(draw_list, q1, q2, q3, col_q, is_active && wave_q > 0.8f);
+
+    // Right end bar: [+11.5, +14.0]
+    const ImVec2 bar_min(center.x + 11.5f, center.y - 10.0f);
+    const ImVec2 bar_max(center.x + 14.0f, center.y + 10.0f);
+    DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, col_bar, is_active && wave_bar > 0.8f);
+}
+
+void DrawEjectPictogram(ImDrawList* draw_list, const ImVec2& center, bool hovered, bool pressed) {
+    const bool is_bright = pressed || hovered;
+    const ImU32 core_col = pressed ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+
+    // Upward chevron triangle matching rewind chevron geometry (base width 20.0f, height 10.0f)
+    // Tip at center.x, center.y - 8.0f; Base at center.y + 2.0f; Left/Right at center.x +- 10.0f
+    const ImVec2 t1(center.x, center.y - 8.0f);
+    const ImVec2 t2(center.x + 10.0f, center.y + 2.0f);
+    const ImVec2 t3(center.x - 10.0f, center.y + 2.0f);
+    DrawDiffusedTriangle(draw_list, t1, t2, t3, core_col, is_bright);
+
+    // Centered horizontal tray bar matching the 20.0f base width: [-10.0f, +10.0f]
+    const ImVec2 bar_min(center.x - 10.0f, center.y + 5.5f);
+    const ImVec2 bar_max(center.x + 10.0f, center.y + 8.5f);
+    DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, core_col, is_bright);
+}
+
+void DrawRecordPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_recording, bool hovered, bool pressed) {
+    const bool is_bright = is_recording || pressed;
+    const ImU32 red_core = is_bright ? IM_COL32(255, 65, 55, 255)
+                                     : (hovered ? IM_COL32(245, 50, 40, 240) : IM_COL32(195, 30, 25, 220));
+    constexpr float radius = 10.0f;
+
+    // Subtle drop shadow
+    draw_list->AddCircleFilled(ImVec2(center.x + 1.0f, center.y + 1.2f), radius, IM_COL32(10, 14, 20, 80));
+
+    // Multi-tier diffuse bloom halos when active, recording, or hovered
+    if (is_bright || hovered) {
+        const ImU32 bloom_outer = is_bright ? IM_COL32(255, 40, 30, 40) : IM_COL32(220, 30, 25, 25);
+        const ImU32 bloom_mid   = is_bright ? IM_COL32(255, 50, 40, 80) : IM_COL32(230, 40, 30, 50);
+        const ImU32 bloom_inner = is_bright ? IM_COL32(255, 90, 80, 150) : IM_COL32(240, 70, 60, 90);
+
+        draw_list->AddCircle(center, radius + 4.5f, bloom_outer, 0, 4.0f);
+        draw_list->AddCircle(center, radius + 2.5f, bloom_mid, 0, 2.5f);
+        draw_list->AddCircle(center, radius + 1.0f, bloom_inner, 0, 1.2f);
+    }
+
+    // Outer machined ring bezel around the red circle for a precision hardware feel
+    draw_list->AddCircle(center, radius + 1.5f, IM_COL32(30, 32, 38, 200), 0, 1.2f);
+
+    // Red lens core fill
+    draw_list->AddCircleFilled(center, radius, red_core);
+
+    // Subtle specular curved lens highlight on upper arc
+    draw_list->PathArcTo(ImVec2(center.x, center.y - 1.0f), radius * 0.65f,
+                         -0.85f * kPi, -0.15f * kPi, 12);
+    draw_list->PathStroke(IM_COL32(255, 200, 200, is_bright ? 180 : 120), 0, 1.2f);
+}
+
+void DrawShufflePictogram(ImDrawList* draw_list, const ImVec2& center, bool is_active, bool hovered, bool pressed) {
+    const bool is_bright = is_active || pressed;
+    const ImU32 core_col = is_bright ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+
+    // Centered crossing arrow paths: [-21.0, +13.5], LED at +20.0
+    const float y1 = center.y - 5.0f;
+    const float y2 = center.y + 5.0f;
+    const float x_start = center.x - 21.0f;
+    const float x_mid1 = center.x - 10.0f;
+    const float x_mid2 = center.x + 1.0f;
+    const float x_end = center.x + 9.5f;
+
+    DrawDiffusedLine(draw_list, ImVec2(x_start, y1), ImVec2(x_mid1, y1), core_col, 1.8f, is_bright);
+    DrawDiffusedLine(draw_list, ImVec2(x_mid1, y1), ImVec2(x_mid2, y2), core_col, 1.8f, is_bright);
+    DrawDiffusedLine(draw_list, ImVec2(x_mid2, y2), ImVec2(x_end, y2), core_col, 1.8f, is_bright);
+
+    DrawDiffusedLine(draw_list, ImVec2(x_start, y2), ImVec2(x_mid1, y2), core_col, 1.8f, is_bright);
+    DrawDiffusedLine(draw_list, ImVec2(x_mid1, y2), ImVec2(x_mid2, y1), core_col, 1.8f, is_bright);
+    DrawDiffusedLine(draw_list, ImVec2(x_mid2, y1), ImVec2(x_end, y1), core_col, 1.8f, is_bright);
+
+    // Arrow heads
+    DrawDiffusedTriangle(draw_list, ImVec2(x_end, y1 - 3.5f), ImVec2(x_end + 4.5f, y1), ImVec2(x_end, y1 + 3.5f), core_col, is_bright);
+    DrawDiffusedTriangle(draw_list, ImVec2(x_end, y2 - 3.5f), ImVec2(x_end + 4.5f, y2), ImVec2(x_end, y2 + 3.5f), core_col, is_bright);
+
+    // Active status mini-LED indicator dot on right side
+    const ImVec2 led_center(center.x + 20.0f, center.y);
+    draw_list->AddCircleFilled(led_center, 3.0f, IM_COL32(18, 20, 24, 255));
+    if (is_active) {
+        draw_list->AddCircle(led_center, 4.0f, IM_COL32(0, 240, 255, 120), 0, 2.0f);
+        draw_list->AddCircleFilled(led_center, 2.2f, kColCyanGlowCore);
+    } else {
+        draw_list->AddCircleFilled(led_center, 2.0f, IM_COL32(0, 50, 65, 200));
+    }
+}
+
+void DrawRepeatPictogram(ImDrawList* draw_list, const ImVec2& center, RepeatMode mode, bool hovered, bool pressed) {
+    const bool is_active = (mode != RepeatMode::Off) || pressed;
+    const ImU32 core_col = is_active ? kColCyanGlowCore : (hovered ? kColCyanBright : kColCyanMuted);
+
+    // Looping arrows rectangle: [-20.0, +4.0], text at +10.5
+    const ImVec2 loop_min(center.x - 20.0f, center.y - 6.0f);
+    const ImVec2 loop_max(center.x + 4.0f, center.y + 6.0f);
+
+    DrawDiffusedRectOutline(draw_list, loop_min, loop_max, 2.5f, core_col, 1.8f, is_active);
+
+    // Top arrow head pointing right
+    DrawDiffusedTriangle(draw_list, ImVec2(loop_max.x - 4.5f, loop_min.y - 3.5f),
+                         ImVec2(loop_max.x + 1.0f, loop_min.y),
+                         ImVec2(loop_max.x - 4.5f, loop_min.y + 3.5f), core_col, is_active);
+
+    // Bottom arrow head pointing left
+    DrawDiffusedTriangle(draw_list, ImVec2(loop_min.x + 4.5f, loop_max.y + 3.5f),
+                         ImVec2(loop_min.x - 1.0f, loop_max.y),
+                         ImVec2(loop_min.x + 4.5f, loop_max.y - 3.5f), core_col, is_active);
+
+    // Mode status text: "1" or "A" on right side
+    const ImVec2 text_pos(center.x + 10.5f, center.y - 7.0f);
+    if (mode == RepeatMode::Track) {
+        draw_list->AddText(text_pos, kColCyanGlowCore, "1");
+    } else if (mode == RepeatMode::Disc) {
+        draw_list->AddText(text_pos, kColCyanBright, "A");
+    } else {
+        draw_list->AddText(text_pos, IM_COL32(60, 70, 80, 180), "-");
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Rotary Hardware Knobs (Volume and Balance)
+// -----------------------------------------------------------------------------
+
+void RenderHardwareKnob(
+    const char* str_id,
+    const char* label,
+    float* value,
+    float min_val,
+    float max_val,
+    float default_val,
+    const ImVec2& center,
+    float radius,
+    bool is_balance
+) {
+    ImGuiIO& io = ImGui::GetIO();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+    const ImVec2 widget_min(center.x - radius - 16.0f, center.y - radius - 14.0f);
+    const ImVec2 widget_max(center.x + radius + 16.0f, center.y + radius + 26.0f);
+
+    ImGui::SetCursorScreenPos(widget_min);
+    ImGui::InvisibleButton(str_id, ImVec2(widget_max.x - widget_min.x, widget_max.y - widget_min.y));
+    const bool is_hovered = ImGui::IsItemHovered();
+    const bool is_active = ImGui::IsItemActive();
+
+    // Interaction handling: drag, mouse wheel, double click reset
+    if (is_active) {
+        const float sensitivity = io.KeyShift ? 0.001f : 0.005f;
+        const float delta = (-io.MouseDelta.y + io.MouseDelta.x) * sensitivity * (max_val - min_val);
+        *value = std::clamp(*value + delta, min_val, max_val);
+    }
+    if (is_hovered && std::abs(io.MouseWheel) > 0.01f) {
+        const float step = (max_val - min_val) * 0.04f * io.MouseWheel;
+        *value = std::clamp(*value + step, min_val, max_val);
+    }
+    if (is_hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        *value = default_val;
+    }
+
+    // Normalized value [0.0, 1.0]
+    const float norm = (*value - min_val) / (max_val - min_val);
+
+    // Angle range: -135 degrees to +135 degrees (270 degree sweep, with 0 pointing straight up)
+    constexpr float kMinAngle = -0.75f * kPi;
+    constexpr float kMaxAngle = 0.75f * kPi;
+    const float current_angle = kMinAngle + norm * (kMaxAngle - kMinAngle);
+
+    // 1. Perimeter calibration ticks arc
+    constexpr int kTotalTicks = 11;
+    for (int i = 0; i < kTotalTicks; ++i) {
+        const float t = static_cast<float>(i) / (kTotalTicks - 1);
+        const float tick_angle = kMinAngle + t * (kMaxAngle - kMinAngle);
+        const float cos_a = std::cos(tick_angle - 0.5f * kPi);
+        const float sin_a = std::sin(tick_angle - 0.5f * kPi);
+
+        const float r1 = radius + 4.5f;
+        const float r2 = radius + ((i == 0 || i == kTotalTicks - 1 || (is_balance && i == (kTotalTicks / 2))) ? 8.5f : 6.5f);
+
+        const ImVec2 p1(center.x + r1 * cos_a, center.y + r1 * sin_a);
+        const ImVec2 p2(center.x + r2 * cos_a, center.y + r2 * sin_a);
+
+        bool tick_lit = false;
+        if (is_balance) {
+            if (i == (kTotalTicks / 2)) {
+                tick_lit = (std::abs(*value) < 0.05f);
+            } else if (*value < 0.0f) {
+                tick_lit = (t <= 0.5f && tick_angle >= current_angle);
+            } else {
+                tick_lit = (t >= 0.5f && tick_angle <= current_angle);
+            }
+        } else {
+            tick_lit = (tick_angle <= current_angle + 0.02f);
+        }
+
+        const ImU32 tick_col = tick_lit
+            ? ((is_balance && i == (kTotalTicks / 2)) ? kColCyanGlowCore : kColCyanBright)
+            : IM_COL32(50, 54, 62, 200);
+
+        if (tick_lit) {
+            draw_list->AddLine(p1, p2, IM_COL32(0, 225, 255, 75), 2.5f);
+        }
+        draw_list->AddLine(p1, p2, tick_col, (i == 0 || i == kTotalTicks - 1) ? 1.8f : 1.2f);
+    }
+
+    // 2. Knob base socket and drop shadow
+    draw_list->AddCircleFilled(ImVec2(center.x + 1.5f, center.y + 2.0f), radius + 1.5f, IM_COL32(0, 0, 0, 160));
+    draw_list->AddCircleFilled(center, radius + 1.0f, IM_COL32(18, 19, 22, 255));
+
+    // 3. Knurled outer rim (36 radial teeth around perimeter)
+    constexpr int kKnurlCount = 36;
+    for (int k = 0; k < kKnurlCount; ++k) {
+        const float angle = (static_cast<float>(k) / kKnurlCount) * 2.0f * kPi;
+        const float ca = std::cos(angle);
+        const float sa = std::sin(angle);
+        const ImVec2 p1(center.x + (radius - 3.0f) * ca, center.y + (radius - 3.0f) * sa);
+        const ImVec2 p2(center.x + radius * ca, center.y + radius * sa);
+        const ImU32 knurl_col = (angle < kPi) ? IM_COL32(130, 136, 146, 200) : IM_COL32(32, 34, 40, 220);
+        draw_list->AddLine(p1, p2, knurl_col, 1.2f);
+    }
+
+    // 4. Circular brushed metal face (darker tone harmonizing with buttons)
+    draw_list->AddCircleFilled(center, radius - 3.0f, is_hovered ? IM_COL32(84, 88, 96, 255) : IM_COL32(72, 75, 82, 255));
+
+    // Concentric machined groove rings
+    draw_list->AddCircle(center, radius - 5.5f, IM_COL32(50, 52, 58, 160), 0, 1.0f);
+    draw_list->AddCircle(center, radius - 8.5f, IM_COL32(96, 100, 110, 120), 0, 1.0f);
+    draw_list->AddCircle(center, radius - 11.5f, IM_COL32(48, 50, 56, 180), 0, 1.0f);
+
+    // Overhead ambient light specular reflection
+    draw_list->AddCircle(center, radius - 3.0f, kColBevelTopLight, 0, 1.2f);
+
+    // 5. Center recessed cap with milled bevel
+    const float cap_r = radius * 0.46f;
+    draw_list->AddCircleFilled(center, cap_r, IM_COL32(28, 29, 34, 255));
+    draw_list->AddCircle(center, cap_r, IM_COL32(16, 17, 20, 255), 0, 1.2f);
+    draw_list->AddCircle(center, cap_r - 1.0f, IM_COL32(60, 64, 72, 180), 0, 1.0f);
+
+    // 6. Cyan backlit indicator pointer notch
+    const float ptr_ca = std::cos(current_angle - 0.5f * kPi);
+    const float ptr_sa = std::sin(current_angle - 0.5f * kPi);
+    const ImVec2 ptr_start(center.x + (cap_r + 1.0f) * ptr_ca, center.y + (cap_r + 1.0f) * ptr_sa);
+    const ImVec2 ptr_end(center.x + (radius - 3.5f) * ptr_ca, center.y + (radius - 3.5f) * ptr_sa);
+
+    // Diffuse pointer glow
+    DrawDiffusedLine(draw_list, ptr_start, ptr_end, kColCyanGlowCore, 1.8f, true);
+
+    // 7. Labels underneath knob
+    char val_buf[32];
+    if (is_balance) {
+        if (std::abs(*value) < 0.05f) {
+            std::snprintf(val_buf, sizeof(val_buf), "CENTER");
+        } else if (*value < 0.0f) {
+            std::snprintf(val_buf, sizeof(val_buf), "L %d%%", static_cast<int>(std::abs(*value) * 100.0f));
+        } else {
+            std::snprintf(val_buf, sizeof(val_buf), "R %d%%", static_cast<int>(*value * 100.0f));
+        }
+    } else {
+        std::snprintf(val_buf, sizeof(val_buf), "%d%%", static_cast<int>(*value * 100.0f));
+    }
+
+    const ImVec2 label_size = ImGui::CalcTextSize(label);
+    const ImVec2 val_size = ImGui::CalcTextSize(val_buf);
+
+    const ImVec2 label_pos(center.x - label_size.x * 0.5f, center.y + radius + 7.0f);
+    const ImVec2 val_pos(center.x - val_size.x * 0.5f, center.y + radius + 18.0f);
+
+    draw_list->AddText(label_pos, IM_COL32(185, 190, 205, 230), label);
+    draw_list->AddText(val_pos, (is_hovered || is_active) ? kColCyanBright : IM_COL32(120, 130, 145, 210), val_buf);
+
+    if (is_hovered) {
+        ImGui::SetTooltip("%s: %s\n(Drag or scroll to adjust, double-click to reset)", label, val_buf);
+    }
+}
+
+} // namespace
+
+void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImGuiIO& io = ImGui::GetIO();
+
+    const ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+    const float panel_width = (size.x > 0.0f) ? size.x : 680.0f;
+    const float panel_height = (size.y > 0.0f) ? size.y : 116.0f;
+
+    const ImVec2 panel_min = cursor_pos;
+    const ImVec2 panel_max(cursor_pos.x + panel_width, cursor_pos.y + panel_height);
+
+    // Chassis bezel framing matching Phase 2.1 display and 2.3 volume meter
+    GetBrushedMetal().RenderPanelChassis(draw_list, panel_min, panel_max, 8.0f);
+
+    // 4 Corner heavy-duty chassis screws matching display and volume meter widgets
+    auto draw_screw = [&](ImVec2 pos) {
+        draw_list->AddCircleFilled(pos, 3.0f, IM_COL32(40, 40, 44, 255));
+        draw_list->AddCircle(pos, 3.0f, IM_COL32(70, 70, 76, 255), 10, 1.0f);
+        draw_list->AddLine(ImVec2(pos.x - 1.8f, pos.y), ImVec2(pos.x + 1.8f, pos.y), IM_COL32(20, 20, 22, 255), 1.0f);
+    };
+    draw_screw(ImVec2(panel_min.x + 10.0f, panel_min.y + 10.0f));
+    draw_screw(ImVec2(panel_max.x - 10.0f, panel_min.y + 10.0f));
+    draw_screw(ImVec2(panel_min.x + 10.0f, panel_max.y - 10.0f));
+    draw_screw(ImVec2(panel_max.x - 10.0f, panel_max.y - 10.0f));
+
+    // Layout geometry: 56x56 normal square buttons, 56x26 half-size buttons
+    constexpr float kNormalBtnSize = 60.0f;
+    constexpr float kHalfBtnWidth = 60.0f;
+    constexpr float kHalfBtnHeight = 28.0f;
+    constexpr float kBtnGap = 7.0f;
+    constexpr float kKnobRadius = 22.0f;
+
+    const float btn_start_y = panel_min.y + (panel_height - kNormalBtnSize) * 0.5f;
+    float current_x = panel_min.x + 18.0f;
+
+    // Helper lambda for rendering a standard hardware button
+    auto RenderHardwareButton = [&](const char* id, const ImVec2& pos, const ImVec2& btn_sz, auto draw_pictogram) {
+        ImGui::SetCursorScreenPos(pos);
+        ImGui::InvisibleButton(id, btn_sz);
+        const bool hovered = ImGui::IsItemHovered();
+        const bool active = ImGui::IsItemActive();
+
+        const ImVec2 socket_min(pos.x - 2.0f, pos.y - 2.0f);
+        const ImVec2 socket_max(pos.x + btn_sz.x + 2.0f, pos.y + btn_sz.y + 2.0f);
+        DrawHardwareButtonSocket(draw_list, socket_min, socket_max);
+
+        const ImVec2 offset = active ? ImVec2(1.5f, 1.5f) : ImVec2(0.0f, 0.0f);
+        const ImVec2 b_min(pos.x + offset.x, pos.y + offset.y);
+        const ImVec2 b_max(pos.x + btn_sz.x + offset.x, pos.y + btn_sz.y + offset.y);
+
+        DrawButtonBrushedFace(draw_list, b_min, b_max, hovered, active);
+
+        const ImVec2 icon_center((b_min.x + b_max.x) * 0.5f, (b_min.y + b_max.y) * 0.5f);
+        draw_pictogram(icon_center, hovered, active);
+
+        return ImGui::IsItemClicked(ImGuiMouseButton_Left);
+    };
+
+    // 1. Eject (load) button
+    const ImVec2 eject_pos(current_x, btn_start_y);
+    if (RenderHardwareButton("##BtnEject", eject_pos, ImVec2(kNormalBtnSize, kNormalBtnSize),
+                            [&](const ImVec2& c, bool h, bool a) {
+                                DrawEjectPictogram(draw_list, c, h, a);
+                            })) {
+        model.open_eject_menu();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Open Eject / Load Menu (E)");
+    }
+    current_x += kNormalBtnSize + kBtnGap;
+
+    // 2. Prev track button (seek backward on long-press)
+    const ImVec2 prev_pos(current_x, btn_start_y);
+    ImGui::SetCursorScreenPos(prev_pos);
+    ImGui::InvisibleButton("##BtnPrev", ImVec2(kNormalBtnSize, kNormalBtnSize));
+    const bool prev_hovered = ImGui::IsItemHovered();
+    const bool prev_active = ImGui::IsItemActive();
+
+    // Long press tracking for Prev with seek backward animation
+    if (prev_active) {
+        if (!s_prev_tracker.is_held) {
+            s_prev_tracker.is_held = true;
+            s_prev_tracker.press_start_time = ImGui::GetTime();
+            s_prev_tracker.did_long_press = false;
+        } else {
+            const double held_time = ImGui::GetTime() - s_prev_tracker.press_start_time;
+            if (held_time > 0.38) {
+                s_prev_tracker.did_long_press = true;
+                // Fast seek backward: 10 seconds per second
+                model.seek_backward(10.0 * static_cast<double>(io.DeltaTime));
+            }
+        }
+    } else {
+        if (s_prev_tracker.is_held) {
+            if (!s_prev_tracker.did_long_press) {
+                // Short click triggered prev track
+                model.prev_track();
+            }
+            s_prev_tracker.is_held = false;
+            s_prev_tracker.did_long_press = false;
+        }
+    }
+
+    const ImVec2 prev_sock_min(prev_pos.x - 2.0f, prev_pos.y - 2.0f);
+    const ImVec2 prev_sock_max(prev_pos.x + kNormalBtnSize + 2.0f, prev_pos.y + kNormalBtnSize + 2.0f);
+    DrawHardwareButtonSocket(draw_list, prev_sock_min, prev_sock_max);
+
+    const ImVec2 prev_offset = prev_active ? ImVec2(1.5f, 1.5f) : ImVec2(0.0f, 0.0f);
+    const ImVec2 p_min(prev_pos.x + prev_offset.x, prev_pos.y + prev_offset.y);
+    const ImVec2 p_max(prev_pos.x + kNormalBtnSize + prev_offset.x, prev_pos.y + kNormalBtnSize + prev_offset.y);
+    DrawButtonBrushedFace(draw_list, p_min, p_max, prev_hovered, prev_active);
+
+    const ImVec2 prev_center((p_min.x + p_max.x) * 0.5f, (p_min.y + p_max.y) * 0.5f);
+    DrawPrevPictogram(draw_list, prev_center, s_prev_tracker.did_long_press, prev_hovered, prev_active);
+    if (prev_hovered) {
+        ImGui::SetTooltip("Previous Track (Hold to seek backward)");
+    }
+    current_x += kNormalBtnSize + kBtnGap;
+
+    // 3. Play / Pause button (> ||)
+    const ImVec2 play_pos(current_x, btn_start_y);
+    if (RenderHardwareButton("##BtnPlayPause", play_pos, ImVec2(kNormalBtnSize, kNormalBtnSize),
+                            [&](const ImVec2& c, bool h, bool a) {
+                                DrawPlayPausePictogram(draw_list, c, model.is_playing(), h, a);
+                            })) {
+        model.toggle_play_pause();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s (Space)", model.is_playing() ? "Pause" : "Play");
+    }
+    current_x += kNormalBtnSize + kBtnGap;
+
+    // 4. Stop button
+    const ImVec2 stop_pos(current_x, btn_start_y);
+    if (RenderHardwareButton("##BtnStop", stop_pos, ImVec2(kNormalBtnSize, kNormalBtnSize),
+                            [&](const ImVec2& c, bool h, bool a) {
+                                DrawStopPictogram(draw_list, c, h, a);
+                            })) {
+        model.stop();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Stop Playback (X)");
+    }
+    current_x += kNormalBtnSize + kBtnGap;
+
+    // 5. Next track button (seek forward on long-press)
+    const ImVec2 next_pos(current_x, btn_start_y);
+    ImGui::SetCursorScreenPos(next_pos);
+    ImGui::InvisibleButton("##BtnNext", ImVec2(kNormalBtnSize, kNormalBtnSize));
+    const bool next_hovered = ImGui::IsItemHovered();
+    const bool next_active = ImGui::IsItemActive();
+
+    // Long press tracking for Next with seek forward animation
+    if (next_active) {
+        if (!s_next_tracker.is_held) {
+            s_next_tracker.is_held = true;
+            s_next_tracker.press_start_time = ImGui::GetTime();
+            s_next_tracker.did_long_press = false;
+        } else {
+            const double held_time = ImGui::GetTime() - s_next_tracker.press_start_time;
+            if (held_time > 0.38) {
+                s_next_tracker.did_long_press = true;
+                // Fast seek forward: 10 seconds per second
+                model.seek_forward(10.0 * static_cast<double>(io.DeltaTime));
+            }
+        }
+    } else {
+        if (s_next_tracker.is_held) {
+            if (!s_next_tracker.did_long_press) {
+                // Short click triggered next track
+                model.next_track();
+            }
+            s_next_tracker.is_held = false;
+            s_next_tracker.did_long_press = false;
+        }
+    }
+
+    const ImVec2 next_sock_min(next_pos.x - 2.0f, next_pos.y - 2.0f);
+    const ImVec2 next_sock_max(next_pos.x + kNormalBtnSize + 2.0f, next_pos.y + kNormalBtnSize + 2.0f);
+    DrawHardwareButtonSocket(draw_list, next_sock_min, next_sock_max);
+
+    const ImVec2 next_offset = next_active ? ImVec2(1.5f, 1.5f) : ImVec2(0.0f, 0.0f);
+    const ImVec2 n_min(next_pos.x + next_offset.x, next_pos.y + next_offset.y);
+    const ImVec2 n_max(next_pos.x + kNormalBtnSize + next_offset.x, next_pos.y + kNormalBtnSize + next_offset.y);
+    DrawButtonBrushedFace(draw_list, n_min, n_max, next_hovered, next_active);
+
+    const ImVec2 next_center((n_min.x + n_max.x) * 0.5f, (n_min.y + n_max.y) * 0.5f);
+    DrawNextPictogram(draw_list, next_center, s_next_tracker.did_long_press, next_hovered, next_active);
+    if (next_hovered) {
+        ImGui::SetTooltip("Next Track (Hold to seek forward)");
+    }
+    current_x += kNormalBtnSize + kBtnGap;
+
+    // 6. Record button (classic look: button with red circle in middle)
+    const ImVec2 record_pos(current_x, btn_start_y);
+    if (RenderHardwareButton("##BtnRecord", record_pos, ImVec2(kNormalBtnSize, kNormalBtnSize),
+                            [&](const ImVec2& c, bool h, bool a) {
+                                DrawRecordPictogram(draw_list, c, model.is_recording(), h, a);
+                            })) {
+        model.start_recording();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Record CD Image to Library (Emulate Ripping)%s",
+                          model.is_recording() ? " [Recording in progress...]" : "");
+    }
+    current_x += kNormalBtnSize + 10.0f;
+
+    // 7. Two smaller half-size buttons one on top of the other: Shuffle and Repeat
+    const ImVec2 shuffle_pos(current_x, btn_start_y);
+    const ImVec2 repeat_pos(current_x, btn_start_y + kHalfBtnHeight + 4.0f);
+
+    // Shuffle button
+    if (RenderHardwareButton("##BtnShuffle", shuffle_pos, ImVec2(kHalfBtnWidth, kHalfBtnHeight),
+                            [&](const ImVec2& c, bool h, bool a) {
+                                DrawShufflePictogram(draw_list, c, model.is_shuffle(), h, a);
+                            })) {
+        model.toggle_shuffle();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Shuffle Mode [S]: %s", model.is_shuffle() ? "ON" : "OFF");
+    }
+
+    // Repeat button
+    if (RenderHardwareButton("##BtnRepeat", repeat_pos, ImVec2(kHalfBtnWidth, kHalfBtnHeight),
+                            [&](const ImVec2& c, bool h, bool a) {
+                                DrawRepeatPictogram(draw_list, c, model.repeat_mode(), h, a);
+                            })) {
+        model.toggle_repeat();
+    }
+    if (ImGui::IsItemHovered()) {
+        const char* rep_str = (model.repeat_mode() == RepeatMode::Off)
+            ? "OFF" : ((model.repeat_mode() == RepeatMode::Disc) ? "DISC" : "TRACK");
+        ImGui::SetTooltip("Repeat Mode [R]: %s", rep_str);
+    }
+    current_x += kHalfBtnWidth + 14.0f;
+
+    // Vertical precision divider line separating buttons and knobs
+    const float div_x = current_x - 3.0f;
+    draw_list->AddLine(ImVec2(div_x, panel_min.y + 16.0f), ImVec2(div_x, panel_max.y - 16.0f), IM_COL32(18, 20, 24, 255), 1.0f);
+    draw_list->AddLine(ImVec2(div_x + 1.0f, panel_min.y + 16.0f), ImVec2(div_x + 1.0f, panel_max.y - 16.0f), IM_COL32(65, 70, 80, 140), 1.0f);
+    current_x += 14.0f;
+
+    // 8. Two round knobs next to each other: Volume and Balance
+    const float knob_center_y = panel_min.y + 44.0f;
+
+    // Volume Knob
+    const ImVec2 vol_center(current_x + kKnobRadius + 10.0f, knob_center_y);
+    float vol_val = static_cast<float>(model.volume());
+    RenderHardwareKnob("##KnobVolume", "VOLUME", &vol_val, 0.0f, 1.0f, 0.8f, vol_center, kKnobRadius, false);
+    if (static_cast<double>(vol_val) != model.volume()) {
+        model.set_volume(static_cast<double>(vol_val));
+    }
+    current_x += (kKnobRadius * 2.0f) + 40.0f;
+
+    // Balance Knob
+    const ImVec2 bal_center(current_x + kKnobRadius + 10.0f, knob_center_y);
+    float bal_val = static_cast<float>(model.balance());
+    RenderHardwareKnob("##KnobBalance", "BALANCE", &bal_val, -1.0f, 1.0f, 0.0f, bal_center, kKnobRadius, true);
+    if (static_cast<double>(bal_val) != model.balance()) {
+        model.set_balance(static_cast<double>(bal_val));
+    }
+
+    // Advance cursor past the controls widget
+    ImGui::SetCursorScreenPos(ImVec2(panel_min.x, panel_max.y + 8.0f));
+    ImGui::Dummy(ImVec2(panel_width, 0.0f));
+}
+
+} // namespace mycds::gui
