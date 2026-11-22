@@ -174,6 +174,19 @@ void RenderCdPlaylist(CdDisplayModel& model, const ImVec2& user_size) {
     ImGui::BeginChild("TrackListChild", ImVec2(list_w, list_h), false,
                       ImGuiWindowFlags_NoMove);
 
+    if (!model.playback_error().empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.38f, 0.35f, 1.0f), "Playback Error: %s",
+                           model.playback_error().c_str());
+        ImGui::Spacing();
+    }
+
+    if (model.tracks().empty()) {
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(1.0f, 0.69f, 0.08f, 0.85f),
+                           "NO DISC LOADED");
+        ImGui::TextDisabled("Press [E] or click Eject to open a physical CD or .cue/.toc image.");
+    }
+
     ImDrawList* child_draw_list = ImGui::GetWindowDrawList();
     const int current_track_num = model.current_track_number();
     const float track_text_h = ImGui::GetTextLineHeight();

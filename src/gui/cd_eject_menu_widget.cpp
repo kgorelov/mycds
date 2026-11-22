@@ -61,49 +61,6 @@ void DrawCornerScrews(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2
     DrawChassisScrew(draw_list, ImVec2(max_pos.x - 10.0f, max_pos.y - 10.0f));
 }
 
-void LoadDiscSourceIntoModel(const mycds::DiscSource& source, CdDisplayModel& model) {
-    const auto raw_tracks = source.getTracks();
-    const auto disc_meta = source.getDiscMetadata();
-    const auto track_meta = source.getTrackMetadata();
-
-    std::vector<TrackInfo> gui_tracks;
-    gui_tracks.reserve(raw_tracks.size());
-
-    for (const auto& trk : raw_tracks) {
-        const std::int64_t sectors = std::max<std::int64_t>(0, trk.endLba - trk.startLba);
-        const int duration_sec = static_cast<int>(sectors / mycds::AudioFormat::kSectorsPerSecond);
-
-        std::string title;
-        for (const auto& tm : track_meta) {
-            if (tm.trackNumber == trk.number && !tm.title.empty()) {
-                title = tm.title;
-                break;
-            }
-        }
-        if (title.empty()) {
-            title = (trk.type == mycds::TrackType::Data)
-                ? ("Track " + std::to_string(trk.number) + " [Data]")
-                : ("Track " + std::to_string(trk.number));
-        }
-
-        gui_tracks.push_back(TrackInfo{trk.number, duration_sec, std::move(title)});
-    }
-
-    if (gui_tracks.empty()) {
-        return;
-    }
-
-    std::string artist = !disc_meta.performer.empty() ? disc_meta.performer : "Unknown Artist";
-    std::string album = disc_meta.title;
-    if (album.empty()) {
-        const std::filesystem::path src_path(source.getSourcePath());
-        album = src_path.has_stem() ? src_path.stem().string() : source.getSourceKind();
-    }
-
-    model.load_disc(artist, album, gui_tracks);
-    model.set_has_cddb_data(!disc_meta.empty());
-}
-
 std::string FormatDurationMmSs(int total_seconds) {
     const int mins = std::max(0, total_seconds) / 60;
     const int secs = std::max(0, total_seconds) % 60;
@@ -250,10 +207,15 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
         GetPersistentUiState().last_cd_rom = drv.devicePath;
         SavePersistentUiState();
         try {
-            mycds::PhysicalCdSource source(drv.devicePath);
-            LoadDiscSourceIntoModel(source, model);
-            state.status_message.clear();
-            state.status_is_error = false;
+            auto source = mycds::open_physical_cd_source(drv.devicePath);
+            std::string err;
+            if (!model.open_disc_source(std::move(source), &err)) {
+                state.status_message = "Failed to load CD: " + err;
+                state.status_is_error = true;
+            } else {
+                state.status_message.clear();
+                state.status_is_error = false;
+            }
         } catch (const std::exception& ex) {
             state.status_message = std::string("Failed to load CD: ") + ex.what();
             state.status_is_error = true;
@@ -444,7 +406,7 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
         const auto& drv = state.drives[static_cast<std::size_t>(state.selected_index)];
         GetPersistentUiState().last_cd_rom = drv.devicePath;
         SavePersistentUiState();
-        model.stop();
+        model.eject_disc();
         if (mycds::eject_cd_drive(drv.devicePath)) {
             state.status_message = "Ejected tray: " + drv.devicePath;
             state.status_is_error = false;
@@ -781,9 +743,13 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
 
     auto try_load_selected = [&](const std::filesystem::path& file_path) {
         try {
-            mycds::ImageSource source(file_path);
-            LoadDiscSourceIntoModel(source, model);
-            browser.clear_error_message();
+            auto source = mycds::open_image_source(file_path.string());
+            std::string err;
+            if (!model.open_disc_source(std::move(source), &err)) {
+                browser.set_error_message("Failed to load image: " + err);
+            } else {
+                browser.clear_error_message();
+            }
         } catch (const std::exception& ex) {
             browser.set_error_message(std::string("Failed to load image: ") + ex.what());
         }

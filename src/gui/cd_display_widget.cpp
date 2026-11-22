@@ -470,17 +470,19 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
                        IM_COL32(160, 110, 50, 180), "COMPACT DISC DIGITAL AUDIO");
 
     // Status indicators
+    const bool has_disc = model.has_disc();
     const bool is_rec = model.is_recording();
-    const bool is_play = model.is_playing();
+    const bool is_play = has_disc && model.is_playing();
+    const bool is_pause = has_disc && !is_play && !is_rec;
     const ImU32 play_col = is_play ? kAmberLitCore : kAmberUnlit;
-    const ImU32 pause_col = (!is_play && !is_rec) ? kAmberLitCore : kAmberUnlit;
+    const ImU32 pause_col = is_pause ? kAmberLitCore : kAmberUnlit;
 
     if (is_play) {
         draw_list->AddText(ImVec2(glass_min.x + 280.0f, header_y), kAmberLitGlow, "> PLAY");
     }
     draw_list->AddText(ImVec2(glass_min.x + 280.0f, header_y), play_col, "> PLAY");
 
-    if (!is_play && !is_rec) {
+    if (is_pause) {
         draw_list->AddText(ImVec2(glass_min.x + 345.0f, header_y), kAmberLitGlow, "|| PAUSE");
     }
     draw_list->AddText(ImVec2(glass_min.x + 345.0f, header_y), pause_col, "|| PAUSE");
@@ -502,7 +504,11 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
 
     // "TOTAL" label
     char total_tracks_buf[16];
-    std::snprintf(total_tracks_buf, sizeof(total_tracks_buf), "/ %02d", model.total_tracks());
+    if (has_disc) {
+        std::snprintf(total_tracks_buf, sizeof(total_tracks_buf), "/ %02d", model.total_tracks());
+    } else {
+        std::snprintf(total_tracks_buf, sizeof(total_tracks_buf), "/ --");
+    }
     draw_list->AddText(ImVec2(glass_min.x + 145.0f, seg_y + 40.0f),
                        IM_COL32(150, 100, 40, 190), total_tracks_buf);
 
@@ -515,13 +521,17 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
 
     // 7-Segment Values
     char track_buf[8];
-    std::snprintf(track_buf, sizeof(track_buf), "%02d", model.current_track_number());
-
     char min_buf[8];
-    std::snprintf(min_buf, sizeof(min_buf), "%02d", model.elapsed_minutes());
-
     char sec_buf[8];
-    std::snprintf(sec_buf, sizeof(sec_buf), "%02d", model.elapsed_seconds());
+    if (has_disc) {
+        std::snprintf(track_buf, sizeof(track_buf), "%02d", model.current_track_number());
+        std::snprintf(min_buf, sizeof(min_buf), "%02d", model.elapsed_minutes());
+        std::snprintf(sec_buf, sizeof(sec_buf), "%02d", model.elapsed_seconds());
+    } else {
+        std::snprintf(track_buf, sizeof(track_buf), "--");
+        std::snprintf(min_buf, sizeof(min_buf), "--");
+        std::snprintf(sec_buf, sizeof(sec_buf), "--");
+    }
 
     const float digits_start_y = seg_y + 14.0f;
 
@@ -549,9 +559,9 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
                           timer_lit_core, timer_lit_glow, timer_unlit_col);
     cur_x += seg_digit_w + 6.0f;
 
-    // Colon between Min and Sec: solid when playing or recording, blinks when paused
-    bool colon_lit = true;
-    if (!is_rec && !model.is_playing()) {
+    // Colon between Min and Sec: solid when playing or recording, blinks when paused, unlit when no disc
+    bool colon_lit = has_disc;
+    if (has_disc && !is_rec && !model.is_playing()) {
         const double phase = std::fmod(model.uptime_seconds(), 1.0);
         colon_lit = (phase < 0.5);
     }

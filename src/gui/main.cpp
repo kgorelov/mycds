@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
+#include <optional>
+#include <string>
 #include <string_view>
 
 #include <SDL3/SDL.h>
@@ -19,8 +22,60 @@
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
+#include "source/disc_source.hpp"
+
+namespace {
+
+void print_gui_usage(std::string_view prog) {
+    std::cout << "Usage: " << prog << " [options] [device_or_image]\n\n"
+              << "Options:\n"
+              << "  --device <path>         Open physical CD drive (e.g. /dev/sr0)\n"
+              << "  --image <path>          Open disc image (.cue or .toc)\n"
+              << "  --audio-driver <name>   Preferred SDL3 audio driver (e.g. pipewire, alsa, dummy)\n"
+              << "  --stopped, --paused     Start in stopped state\n"
+              << "  --help, -h              Show this help message\n";
+}
+
+} // namespace
 
 int main(int argc, char* argv[]) {
+    std::optional<std::string> cli_source_path;
+    bool cli_source_is_device = false;
+    bool cli_source_type_explicit = false;
+    bool force_stopped = false;
+    std::string audio_driver;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg(argv[i]);
+        if (arg == "--help" || arg == "-h") {
+            print_gui_usage(argc > 0 && argv[0] ? argv[0] : "mycds");
+            return 0;
+        }
+        if (arg == "--stopped" || arg == "--paused") {
+            force_stopped = true;
+        } else if (arg == "--device" || arg == "--image") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: '" << arg << "' requires a path argument.\n";
+                return 1;
+            }
+            cli_source_is_device = (arg == "--device");
+            cli_source_type_explicit = true;
+            cli_source_path = argv[++i];
+        } else if (arg == "--audio-driver") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: '--audio-driver' requires a driver name.\n";
+                return 1;
+            }
+            audio_driver = argv[++i];
+        } else if (!arg.empty() && arg[0] != '-') {
+            cli_source_path = std::string(arg);
+            cli_source_type_explicit = false;
+        } else {
+            std::cerr << "Error: Unknown argument '" << arg << "'.\n";
+            print_gui_usage(argc > 0 && argv[0] ? argv[0] : "mycds");
+            return 1;
+        }
+    }
 
     // Disable X11 compositor bypass by default (improves desktop integration on KDE KWin and X11 compositors)
     SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
@@ -102,20 +157,56 @@ int main(int argc, char* argv[]) {
         std::cerr << "Warning: Failed to initialize brushed metal texture\n";
     }
 
-    mycds::gui::CdDisplayModel display_model;
+    mycds::PlaybackControllerConfig controller_config;
+    controller_config.audioConfig.preferredDriver = audio_driver;
+
+    mycds::gui::CdDisplayModel display_model(controller_config);
+    display_model.clear_disc();
+
     const mycds::gui::AppSettings startup_settings =
         mycds::gui::load_app_settings(mycds::gui::default_settings_path());
     display_model.set_app_settings(startup_settings);
     const mycds::gui::PersistentUiState startup_ui_state =
         mycds::gui::load_ui_state(mycds::gui::default_ui_state_path());
     display_model.set_active_eject_screen(startup_ui_state.last_eject_screen);
-    if (!startup_settings.play_when_started) {
-        display_model.stop();
+
+    bool cli_load_failed = false;
+    if (cli_source_path.has_value()) {
+        const bool is_dev = cli_source_type_explicit
+            ? cli_source_is_device
+            : (cli_source_path->rfind("/dev/", 0) == 0);
+        try {
+            auto src = is_dev
+                ? mycds::open_physical_cd_source(*cli_source_path)
+                : mycds::open_image_source(*cli_source_path);
+            std::string err;
+            if (!display_model.open_disc_source(std::move(src), &err)) {
+                std::cerr << "Failed to open '" << *cli_source_path << "': " << err << '\n';
+                cli_load_failed = true;
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "Failed to open '" << *cli_source_path << "': " << ex.what() << '\n';
+            cli_load_failed = true;
+        }
     }
-    for (int i = 1; i < argc; ++i) {
-        const std::string_view arg(argv[i]);
-        if (arg == "--stopped" || arg == "--paused") {
+
+    if (cli_load_failed) {
+        display_model.eject_disc();
+        mycds::gui::GetBrushedMetal().Shutdown();
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplSDL3_Shutdown();
+        ImGui::DestroyContext();
+        SDL_GL_DestroyContext(gl_context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    if (display_model.has_real_source()) {
+        if (!startup_settings.play_when_started || force_stopped) {
             display_model.stop();
+        } else if (!display_model.is_playing()) {
+            display_model.play();
         }
     }
 
@@ -280,9 +371,6 @@ int main(int argc, char* argv[]) {
             if (ImGui::IsKeyPressed(ImGuiKey_C)) {
                 display_model.toggle_connectivity();
             }
-            if (ImGui::IsKeyPressed(ImGuiKey_D)) {
-                display_model.start_recording();
-            }
 
             // Direct track selection (1-9 for tracks 1-9, 0 for track 10)
             if (ImGui::IsKeyPressed(ImGuiKey_1) || ImGui::IsKeyPressed(ImGuiKey_Keypad1)) {
@@ -416,6 +504,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Cleanup
+    display_model.eject_disc();
     mycds::gui::GetBrushedMetal().Shutdown();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();

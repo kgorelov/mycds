@@ -174,17 +174,19 @@ void DrawEjectPictogram(ImDrawList* draw_list, const ImVec2& center, bool hovere
     DrawDiffusedRect(draw_list, bar_min, bar_max, 1.0f, core_col, is_bright);
 }
 
-void DrawRecordPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_recording, bool hovered, bool pressed) {
-    const bool is_bright = is_recording || pressed;
-    const ImU32 red_core = is_bright ? IM_COL32(255, 65, 55, 255)
-                                     : (hovered ? IM_COL32(245, 50, 40, 240) : IM_COL32(195, 30, 25, 220));
+void DrawRecordPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_recording, bool hovered, bool pressed, bool enabled = true) {
+    const bool is_bright = enabled && (is_recording || pressed);
+    const ImU32 red_core = !enabled
+        ? IM_COL32(85, 28, 26, 150)
+        : (is_bright ? IM_COL32(255, 65, 55, 255)
+                     : (hovered ? IM_COL32(245, 50, 40, 240) : IM_COL32(195, 30, 25, 220)));
     constexpr float radius = 10.0f;
 
     // Subtle drop shadow
     draw_list->AddCircleFilled(ImVec2(center.x + 1.0f, center.y + 1.2f), radius, IM_COL32(10, 14, 20, 80));
 
     // Multi-tier diffuse bloom halos when active, recording, or hovered
-    if (is_bright || hovered) {
+    if (enabled && (is_bright || hovered)) {
         const ImU32 bloom_outer = is_bright ? IM_COL32(255, 40, 30, 40) : IM_COL32(220, 30, 25, 25);
         const ImU32 bloom_mid   = is_bright ? IM_COL32(255, 50, 40, 80) : IM_COL32(230, 40, 30, 50);
         const ImU32 bloom_inner = is_bright ? IM_COL32(255, 90, 80, 150) : IM_COL32(240, 70, 60, 90);
@@ -203,7 +205,7 @@ void DrawRecordPictogram(ImDrawList* draw_list, const ImVec2& center, bool is_re
     // Subtle specular curved lens highlight on upper arc
     draw_list->PathArcTo(ImVec2(center.x, center.y - 1.0f), radius * 0.65f,
                          -0.85f * kPi, -0.15f * kPi, 12);
-    draw_list->PathStroke(IM_COL32(255, 200, 200, is_bright ? 180 : 120), 0, 1.2f);
+    draw_list->PathStroke(IM_COL32(255, 200, 200, enabled ? (is_bright ? 180 : 120) : 45), 0, 1.2f);
 }
 
 void DrawShufflePictogram(ImDrawList* draw_list, const ImVec2& center, bool is_active, bool hovered, bool pressed) {
@@ -622,17 +624,24 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
     }
     current_x += kNormalBtnSize + kBtnGap;
 
-    // 6. Record button (classic look: button with red circle in middle)
+    // 6. Record button (disabled in Milestone 1)
     const ImVec2 record_pos(current_x, btn_start_y);
-    if (RenderHardwareButton("##BtnRecord", record_pos, ImVec2(kNormalBtnSize, kNormalBtnSize),
-                            [&](const ImVec2& c, bool h, bool a) {
-                                DrawRecordPictogram(draw_list, c, model.is_recording(), h, a);
-                            })) {
-        model.start_recording();
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Record CD Image to Library (Emulate Ripping)%s",
-                          model.is_recording() ? " [Recording in progress...]" : "");
+    {
+        ImGui::SetCursorScreenPos(record_pos);
+        const ImVec2 btn_sz(kNormalBtnSize, kNormalBtnSize);
+        ImGui::InvisibleButton("##BtnRecord", btn_sz);
+        const bool rec_hovered = ImGui::IsItemHovered();
+
+        const ImVec2 socket_min(record_pos.x - 2.0f, record_pos.y - 2.0f);
+        const ImVec2 socket_max(record_pos.x + btn_sz.x + 2.0f, record_pos.y + btn_sz.y + 2.0f);
+        DrawHardwareButtonSocket(draw_list, socket_min, socket_max);
+        DrawButtonBrushedFace(draw_list, record_pos, ImVec2(record_pos.x + btn_sz.x, record_pos.y + btn_sz.y), false, false);
+
+        const ImVec2 icon_center(record_pos.x + btn_sz.x * 0.5f, record_pos.y + btn_sz.y * 0.5f);
+        DrawRecordPictogram(draw_list, icon_center, false, false, false, false);
+        if (rec_hovered) {
+            ImGui::SetTooltip("Record CD to Library (Disabled — coming in a future milestone)");
+        }
     }
     current_x += kNormalBtnSize + 10.0f;
 

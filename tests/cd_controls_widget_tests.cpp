@@ -11,6 +11,7 @@
 #include "gui/cd_display_widget.h"
 #include "gui/cd_eject_menu_widget.h"
 #include "gui/cd_layout.h"
+#include "gui/cd_playlist_widget.h"
 #include "gui/eject_menu_state.h"
 #include "imgui.h"
 #include "source/physical_cd_source.hpp"
@@ -743,4 +744,27 @@ TEST(UiStateTests, PersistenceRoundTrip) {
     EXPECT_EQ(loaded.last_cd_rom, "/dev/sr1");
 
     std::filesystem::remove_all(state_path.parent_path(), ec);
+}
+
+TEST_F(CdControlsWidgetTest, RenderEmptyDeckStateHeadless) {
+    CdDisplayModel model;
+    model.clear_disc();
+    EXPECT_FALSE(model.has_disc());
+    EXPECT_EQ(model.total_tracks(), 0);
+
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(1460, 600));
+    ImGui::Begin("TestEmptyDeck", nullptr, ImGuiWindowFlags_NoDecoration);
+
+    RenderCdDisplay(model, ImVec2(680.0f, 250.0f));
+    RenderCdControls(model, ImVec2(680.0f, 116.0f));
+    RenderCdPlaylist(model, ImVec2(500.0f, 400.0f));
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ASSERT_NE(draw_list, nullptr);
+    EXPECT_GT(draw_list->CmdBuffer.size(), 0u);
+
+    ImGui::End();
+    ImGui::Render();
 }
