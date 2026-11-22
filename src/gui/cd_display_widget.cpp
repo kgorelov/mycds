@@ -746,14 +746,14 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
 
     // Clickable Segmented Track Progress Bar at the bottom of the smoked glass display
     {
-        constexpr int kProgressSegments = 56;
-        constexpr float kSegGap = 3.0f;
-        constexpr float kSegHeight = 8.0f;
-        constexpr float kHitPadY = 4.0f;
+        constexpr int kProgressSegments = 30;
+        constexpr float kSegGap = 3.5f;
+        constexpr float kSegHeight = 6.5f;
+        constexpr float kHitPadY = 5.0f;
 
-        const float bar_x = glass_min.x + 10.0f;
-        const float bar_w = glass_w - 20.0f;
-        const float bar_y = indicator_y + ind_tile_h + 10.0f;
+        const float bar_x = glass_min.x + 20.0f;
+        const float bar_w = glass_w - 40.0f;
+        const float bar_y = indicator_y + ind_tile_h + 11.0f;
         const float seg_w = (bar_w - static_cast<float>(kProgressSegments - 1) * kSegGap) /
                             static_cast<float>(kProgressSegments);
 
@@ -801,12 +801,10 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
             const bool is_hover_marker = (i == hover_seg);
 
             if (is_lit) {
-                draw_list->AddRect(
-                    ImVec2(s_min.x - 1.0f, s_min.y - 1.0f),
-                    ImVec2(s_max.x + 1.0f, s_max.y + 1.0f),
-                    seg_lit_glow, 1.0f, 0, 2.0f);
+                draw_list->AddRect(s_min, s_max, seg_lit_glow, 1.0f, 0, 4.0f);
                 draw_list->AddRectFilled(s_min, s_max, seg_lit_core, 1.0f);
             } else if (is_hover_marker) {
+                draw_list->AddRect(s_min, s_max, seg_lit_glow, 1.0f, 0, 3.0f);
                 draw_list->AddRectFilled(s_min, s_max, IM_COL32(180, 115, 20, 220), 1.0f);
             } else {
                 draw_list->AddRectFilled(s_min, s_max, seg_unlit, 1.0f);
