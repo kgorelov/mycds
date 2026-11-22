@@ -82,6 +82,9 @@ bool FileBrowserState::navigate_to(const std::filesystem::path& dir) {
         if (filename.empty()) {
             continue;
         }
+        if (!show_all_files_ && filename[0] == '.') {
+            continue;
+        }
 
         if (is_dir) {
             dirs.push_back(FileBrowserEntry{filename, entry.path(), true, 0});

@@ -311,6 +311,48 @@ TEST(FileBrowserStateTests, FiltersCueAndTocFilesAndNavigatesDirectories) {
     std::filesystem::remove_all(temp_root, ec);
 }
 
+TEST(FileBrowserStateTests, HidesDotfilesUnlessShowAllFilesEnabled) {
+    const std::filesystem::path temp_root =
+        std::filesystem::temp_directory_path() / "mycds_dotfiles_test";
+    std::error_code ec;
+    std::filesystem::remove_all(temp_root, ec);
+    std::filesystem::create_directories(temp_root / "visible_dir", ec);
+    std::filesystem::create_directories(temp_root / ".hidden_dir", ec);
+
+    { std::ofstream(temp_root / "visible.cue") << "FILE \"v.bin\" BINARY\n"; }
+    { std::ofstream(temp_root / ".hidden.cue") << "FILE \"h.bin\" BINARY\n"; }
+    { std::ofstream(temp_root / ".hidden_notes.txt") << "secret\n"; }
+    { std::ofstream(temp_root / "notes.txt") << "plain\n"; }
+
+    FileBrowserState browser(temp_root);
+    EXPECT_FALSE(browser.show_all_files());
+
+    // By default, only visible_dir and visible.cue should appear
+    ASSERT_EQ(browser.entries().size(), 2u);
+    EXPECT_TRUE(browser.entries()[0].isDirectory);
+    EXPECT_EQ(browser.entries()[0].name, "visible_dir");
+    EXPECT_FALSE(browser.entries()[1].isDirectory);
+    EXPECT_EQ(browser.entries()[1].name, "visible.cue");
+
+    // Enabling "Show all files" reveals hidden directories, hidden files, and non-image files
+    browser.set_show_all_files(true);
+    ASSERT_EQ(browser.entries().size(), 6u);
+    EXPECT_EQ(browser.entries()[0].name, ".hidden_dir");
+    EXPECT_EQ(browser.entries()[1].name, "visible_dir");
+    EXPECT_EQ(browser.entries()[2].name, ".hidden.cue");
+    EXPECT_EQ(browser.entries()[3].name, ".hidden_notes.txt");
+    EXPECT_EQ(browser.entries()[4].name, "notes.txt");
+    EXPECT_EQ(browser.entries()[5].name, "visible.cue");
+
+    // Disabling it again hides dotfiles and non-image files
+    browser.set_show_all_files(false);
+    ASSERT_EQ(browser.entries().size(), 2u);
+    EXPECT_EQ(browser.entries()[0].name, "visible_dir");
+    EXPECT_EQ(browser.entries()[1].name, "visible.cue");
+
+    std::filesystem::remove_all(temp_root, ec);
+}
+
 TEST(CdDriveEnumerationTests, EnumerateDrivesDoesNotThrow) {
     const auto drives = mycds::enumerate_cd_drives();
     for (const auto& drv : drives) {
