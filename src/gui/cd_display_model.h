@@ -1,8 +1,15 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
+
+#include "domain/disc_info.hpp"
+#include "playback/playback_controller.hpp"
 
 namespace mycds::gui {
 
@@ -68,6 +75,23 @@ struct AppSettings {
 class CdDisplayModel {
 public:
     CdDisplayModel();
+    explicit CdDisplayModel(mycds::PlaybackControllerConfig controller_config);
+    ~CdDisplayModel();
+
+    CdDisplayModel(const CdDisplayModel&) = delete;
+    CdDisplayModel& operator=(const CdDisplayModel&) = delete;
+
+    void set_playback_controller_config(const mycds::PlaybackControllerConfig& config);
+
+    bool open_disc_source(
+        std::unique_ptr<mycds::DiscSource> source,
+        std::string* out_error = nullptr);
+    void eject_disc() noexcept;
+    void clear_disc() noexcept;
+
+    [[nodiscard]] bool has_disc() const noexcept;
+    [[nodiscard]] bool has_real_source() const noexcept;
+    [[nodiscard]] const std::string& playback_error() const noexcept;
 
     void update(double delta_time_seconds);
 
@@ -169,6 +193,34 @@ private:
     VolumeLevels volume_levels_{};
     double left_peak_timer_{0.0};
     double right_peak_timer_{0.0};
+
+    mycds::PlaybackControllerConfig controller_config_{};
+    std::unique_ptr<mycds::PlaybackController> controller_{};
+    mycds::DiscLayout disc_layout_{};
+    bool has_real_source_{false};
+    std::string playback_error_{};
+
+    // Coalesced seeking state for smooth arrow-key / long-press scrubbing
+    bool pending_seek_active_{false};
+    std::int64_t pending_seek_lba_{0};
+    double pending_seek_timer_{0.0};
+    int pending_seek_idle_frames_{0};
+
+    // Asynchronous CDDB lookup state
+    struct AsyncCddbResult;
+    std::mutex cddb_mutex_{};
+    std::thread cddb_thread_{};
+    std::atomic<std::uint64_t> cddb_generation_{0};
+    std::unique_ptr<AsyncCddbResult> cddb_result_{};
+
+    void apply_layout_metadata();
+    void start_async_cddb_lookup();
+    void cancel_async_cddb_lookup() noexcept;
+    void poll_async_cddb_lookup();
+    void update_vu_ballistics(double target_left, double target_right, double dt);
+    [[nodiscard]] int first_playable_track_number() const noexcept;
+    [[nodiscard]] int pick_random_playable_track() const noexcept;
+    [[nodiscard]] bool is_playable_track_index(size_t index) const noexcept;
 };
 
 } // namespace mycds::gui

@@ -1,6 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <thread>
+
+#include "audio/audio_output.hpp"
 #include "gui/cd_display_model.h"
+#include "metadata/metadata_store.hpp"
+#include "source/image_source.hpp"
 
 using namespace mycds::gui;
 
@@ -454,4 +462,120 @@ TEST(CdDisplayModelTests, ArtistAndAlbumCddbData) {
     EXPECT_EQ(model.artist_name(), "Dire Straits");
     EXPECT_EQ(model.album_title(), "Brothers in Arms");
     EXPECT_EQ(model.total_tracks(), 2);
+}
+
+TEST(CdDisplayModelTests, RealPlaybackControllerIntegrationWithCueImage) {
+    namespace fs = std::filesystem;
+    const fs::path temp_dir = fs::temp_directory_path() / "mycds_display_model_real_test";
+    std::error_code ec;
+    fs::remove_all(temp_dir, ec);
+    fs::create_directories(temp_dir, ec);
+
+    const fs::path bin_path = temp_dir / "test.bin";
+    const fs::path cue_path = temp_dir / "test.cue";
+    const fs::path sidecar_path = temp_dir / "test.mycds.json";
+
+    // 150 sectors = 2.0 seconds of 440 Hz sine wave (Track 1: 75 sectors, Track 2: 75 sectors)
+    {
+        std::ofstream bin_out(bin_path, std::ios::binary);
+        const auto pcm = mycds::generate_sine_wave_pcm(440.0, 150, 0.5);
+        bin_out.write(
+            reinterpret_cast<const char*>(pcm.data()),
+            static_cast<std::streamsize>(pcm.size()));
+    }
+    {
+        std::ofstream cue_out(cue_path);
+        cue_out << "PERFORMER \"Test Artist\"\n"
+                << "TITLE \"Test Album\"\n"
+                << "FILE \"test.bin\" BINARY\n"
+                << "  TRACK 01 AUDIO\n"
+                << "    TITLE \"First Cut\"\n"
+                << "    INDEX 01 00:00:00\n"
+                << "  TRACK 02 AUDIO\n"
+                << "    TITLE \"Second Cut\"\n"
+                << "    INDEX 01 00:01:00\n";
+    }
+
+    // Write a sidecar file to verify non-blocking local sidecar loading overrides/enriches metadata
+    {
+        mycds::MetadataRecord rec;
+        rec.disc.performer = "Sidecar Artist";
+        rec.disc.title = "Sidecar Album";
+        rec.tracks = {
+            {.trackNumber = 1, .title = "Sidecar One"},
+            {.trackNumber = 2, .title = "Sidecar Two"},
+        };
+        mycds::MetadataStore::saveSidecar(sidecar_path, rec);
+    }
+
+    mycds::PlaybackControllerConfig cfg;
+    cfg.audioConfig.ringBufferSectors = 60;
+    cfg.audioConfig.preferredDriver = "dummy";
+    cfg.readChunkSectors = 8;
+    cfg.prebufferSectors = 8;
+
+    CdDisplayModel model(cfg);
+    EXPECT_FALSE(model.has_real_source());
+    model.clear_disc();
+    EXPECT_FALSE(model.has_disc());
+    EXPECT_EQ(model.total_tracks(), 0);
+
+    std::string err;
+    ASSERT_TRUE(model.open_disc_source(mycds::open_image_source(cue_path.string()), &err)) << err;
+    EXPECT_TRUE(model.has_real_source());
+    EXPECT_TRUE(model.has_disc());
+    EXPECT_EQ(model.total_tracks(), 2);
+    EXPECT_EQ(model.artist_name(), "Sidecar Artist");
+    EXPECT_EQ(model.album_title(), "Sidecar Album");
+    EXPECT_TRUE(model.is_playing());
+    EXPECT_EQ(model.current_track_number(), 1);
+
+    // Advance uptime >= 3.0s for CDDB indicator and let real audio stream
+    model.update(3.0);
+    EXPECT_TRUE(model.has_cddb_data());
+    EXPECT_EQ(model.track_display_title(0), "Sidecar One");
+    EXPECT_EQ(model.track_display_title(1), "Sidecar Two");
+
+    bool progressed = false;
+    bool meter_active = false;
+    for (int i = 0; i < 40; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        model.update(0.015);
+        if (model.track_elapsed_seconds() > 0.02) {
+            progressed = true;
+        }
+        if (model.left_level() > 0.05 && model.right_level() > 0.05) {
+            meter_active = true;
+        }
+        if (progressed && meter_active) {
+            break;
+        }
+    }
+    EXPECT_TRUE(progressed);
+    EXPECT_TRUE(meter_active);
+
+    // Jump to track 2 and verify track number updates
+    model.jump_to_track(2);
+    model.update(0.02);
+    EXPECT_EQ(model.current_track_number(), 2);
+
+    // Pause zeroes meter levels immediately
+    model.pause();
+    EXPECT_FALSE(model.is_playing());
+    EXPECT_DOUBLE_EQ(model.left_level(), 0.0);
+    EXPECT_DOUBLE_EQ(model.right_level(), 0.0);
+
+    // Stop resets to track 1 00:00
+    model.stop();
+    EXPECT_FALSE(model.is_playing());
+    EXPECT_EQ(model.current_track_number(), 1);
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+
+    // Eject clears source and disc
+    model.eject_disc();
+    EXPECT_FALSE(model.has_real_source());
+    EXPECT_FALSE(model.has_disc());
+    EXPECT_EQ(model.total_tracks(), 0);
+
+    fs::remove_all(temp_dir, ec);
 }

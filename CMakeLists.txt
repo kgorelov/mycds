@@ -303,6 +303,7 @@ if(GTest_FOUND)
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
     target_link_libraries(cd_display_model_tests PRIVATE
+        mycds_core
         GTest::gtest_main
     )
     add_test(NAME cd_display_model_tests COMMAND cd_display_model_tests)
