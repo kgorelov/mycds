@@ -826,7 +826,7 @@ void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
         const auto& entries = browser.entries();
         ImGuiIO& io = ImGui::GetIO();
         bool scroll_to_selection = false;
-        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !io.WantTextInput) {
+        if (!just_entered && ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !io.WantTextInput) {
             auto move_step = [&](int step) {
                 if (entries.empty()) {
                     if (has_parent) {
