@@ -241,6 +241,49 @@ TEST_F(CdControlsWidgetTest, RenderCdDisplayInRecordingAndNormalModes) {
     ImGui::Render();
 }
 
+TEST_F(CdControlsWidgetTest, LibraryScreenFocusesSearchAndSupportsUpDownEnter) {
+    CdDisplayModel model;
+    model.open_eject_menu();
+    model.set_active_eject_screen(EjectMenuScreen::Library);
+
+    auto render_frame = [&]() {
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImVec2(1460, 600));
+        ImGui::Begin("TestWindowLib", nullptr, ImGuiWindowFlags_NoDecoration);
+        RenderEjectMenu(model, ImVec2(1412.0f, 560.0f));
+        ImGui::End();
+        ImGui::Render();
+    };
+
+    // Enable keyboard navigation just like main.cpp does when the eject menu is open
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+    // Frame 1: entering Library calls SetKeyboardFocusHere()
+    render_frame();
+    // Frame 2: ImGui resolves the nav focus request onto ##LibSearch
+    render_frame();
+    // Frame 3: NewFrame() updates io.WantTextInput == true for the active search InputText
+    render_frame();
+    EXPECT_TRUE(ImGui::GetIO().WantTextInput);
+
+    // Frame 4: press Down arrow to move from index 0 (Dark Side) to index 1 (Abbey Road)
+    // Search bar must retain text input focus!
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_DownArrow, true);
+    render_frame();
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_DownArrow, false);
+    render_frame();
+    EXPECT_TRUE(ImGui::GetIO().WantTextInput);
+
+    // Frame 6: press Enter to load the selected album
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_Enter, true);
+    render_frame();
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_Enter, false);
+
+    EXPECT_EQ(model.album_title(), "Abbey Road");
+    EXPECT_EQ(model.artist_name(), "The Beatles");
+}
+
 TEST(FileBrowserStateTests, FiltersCueAndTocFilesAndNavigatesDirectories) {
     const std::filesystem::path temp_root =
         std::filesystem::temp_directory_path() / "mycds_file_browser_test";

@@ -1240,11 +1240,18 @@ void DrawHighlightedText(ImDrawList* draw_list,
     }
 }
 
-void RenderLibraryScreen(CdDisplayModel& model) {
+void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
     static LibraryCatalogState library;
     static char search_buf[128] = "";
 
+    auto load_library_entry = [&](const LibraryEntry& entry) {
+        model.load_disc(entry.artist, entry.album, entry.tracks);
+        model.set_has_cddb_data(true);
+    };
+
     ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.25f);
+    ImGui::BeginChild("##LibRoot", ImVec2(0.0f, 0.0f), false,
+                      ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoBackground);
     ImGui::TextDisabled("Mock Library Catalog (search by artist, album, or track name):");
     ImGui::Spacing();
 
@@ -1258,6 +1265,10 @@ void RenderLibraryScreen(CdDisplayModel& model) {
         ? avail_w
         : std::max(180.0f, avail_w - genre_w - sort_w - 2.0f * item_gap_x);
 
+    if (just_entered) {
+        ImGui::SetWindowFocus();
+        ImGui::SetKeyboardFocusHere();
+    }
     ImGui::SetNextItemWidth(search_w);
     {
         ScopedSearchBarStyle search_style;
@@ -1308,6 +1319,22 @@ void RenderLibraryScreen(CdDisplayModel& model) {
     ImGui::Spacing();
 
     const auto matches = library.filtered_entries();
+    bool scroll_to_selection = false;
+    if (!just_entered && !matches.empty() &&
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+        !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)) {
+        const std::size_t current_idx = std::min(library.selected_index(), matches.size() - 1);
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+            library.set_selected_index(current_idx > 0 ? current_idx - 1 : 0);
+            scroll_to_selection = true;
+        } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+            library.set_selected_index(std::min(current_idx + 1, matches.size() - 1));
+            scroll_to_selection = true;
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
+            load_library_entry(*matches[current_idx]);
+        }
+    }
+
     const std::string query_lower = ToLowerAscii(library.search_query());
     constexpr ImU32 kMatchGreenCol = IM_COL32(64, 230, 115, 255);
     constexpr float kMinHorizontalSplitWidth = 680.0f;
@@ -1326,7 +1353,8 @@ void RenderLibraryScreen(CdDisplayModel& model) {
 
     // Matching albums list
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
-    ImGui::BeginChild("##LibAlbumList", ImVec2(albums_w, albums_h), true);
+    ImGui::BeginChild("##LibAlbumList", ImVec2(albums_w, albums_h), true,
+                      ImGuiWindowFlags_NoNavInputs);
     {
         if (matches.empty()) {
             ImGui::TextDisabled("No albums match your search/filter criteria.");
@@ -1340,9 +1368,11 @@ void RenderLibraryScreen(CdDisplayModel& model) {
                 if (ImGui::Selectable("##LibAlbumRow", is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
                     library.set_selected_index(i);
                     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                        model.load_disc(entry->artist, entry->album, entry->tracks);
-                        model.set_has_cddb_data(true);
+                        load_library_entry(*entry);
                     }
+                }
+                if (is_selected && scroll_to_selection) {
+                    ImGui::SetScrollHereY(0.5f);
                 }
                 ImGui::PopID();
 
@@ -1417,11 +1447,11 @@ void RenderLibraryScreen(CdDisplayModel& model) {
     const ImVec2 load_pos = ImGui::GetCursorScreenPos();
     if (RenderHardwareTextButton("##BtnLoadLibAlbum", "Load Album", load_pos, ImVec2(170.0f, 38.0f),
                                  false, selected_entry != nullptr)) {
-        model.load_disc(selected_entry->artist, selected_entry->album, selected_entry->tracks);
-        model.set_has_cddb_data(true);
+        load_library_entry(*selected_entry);
     }
     ImGui::SetCursorScreenPos(ImVec2(load_pos.x, load_pos.y + 42.0f));
     ImGui::Dummy(ImVec2(1.0f, 1.0f));
+    ImGui::EndChild();
     ImGui::PopFont();
 }
 
@@ -1806,6 +1836,9 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
         const bool just_entered_image =
             (model.active_eject_screen() == EjectMenuScreen::ImageFile) &&
             (ImGui::IsWindowAppearing() || prev_screen != EjectMenuScreen::ImageFile);
+        const bool just_entered_library =
+            (model.active_eject_screen() == EjectMenuScreen::Library) &&
+            (ImGui::IsWindowAppearing() || prev_screen != EjectMenuScreen::Library);
         prev_screen = model.active_eject_screen();
 
         switch (model.active_eject_screen()) {
@@ -1816,7 +1849,7 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
                 RenderImageFileScreen(model, just_entered_image);
                 break;
             case EjectMenuScreen::Library:
-                RenderLibraryScreen(model);
+                RenderLibraryScreen(model, just_entered_library);
                 break;
             case EjectMenuScreen::DiskInfo:
                 RenderDiskInfoScreen(model);
