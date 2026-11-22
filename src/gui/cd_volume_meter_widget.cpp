@@ -32,10 +32,10 @@ constexpr ImU32 kYellowLitGlow  = IM_COL32(230, 180, 0, 80);
 constexpr ImU32 kYellowLitHi    = IM_COL32(255, 250, 180, 200);
 constexpr ImU32 kYellowUnlit    = IM_COL32(44, 38, 8, 220);
 
-constexpr ImU32 kRedLitCore     = IM_COL32(255, 55, 45, 255);
-constexpr ImU32 kRedLitGlow     = IM_COL32(230, 40, 30, 90);
-constexpr ImU32 kRedLitHi       = IM_COL32(255, 175, 165, 200);
-constexpr ImU32 kRedUnlit       = IM_COL32(48, 12, 10, 220);
+constexpr ImU32 kRedLitCore     = IM_COL32(255, 90, 90, 255);
+constexpr ImU32 kRedLitGlow     = IM_COL32(245, 65, 50, 95);
+constexpr ImU32 kRedLitHi       = IM_COL32(255, 145, 130, 120);
+constexpr ImU32 kRedUnlit       = IM_COL32(52, 14, 12, 220);
 
 constexpr int kTotalSegments = 24;
 constexpr int kGreenSegments = 14;  // 0 .. 13
