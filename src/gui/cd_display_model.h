@@ -207,8 +207,8 @@ private:
 
     // Coalesced seeking state for smooth arrow-key / long-press scrubbing
     bool pending_seek_active_{false};
+    bool pending_seek_was_playing_{false};
     std::int64_t pending_seek_lba_{0};
-    double pending_seek_timer_{0.0};
     int pending_seek_idle_frames_{0};
 
     // Asynchronous CDDB lookup state

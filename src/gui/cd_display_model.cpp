@@ -92,7 +92,7 @@ bool CdDisplayModel::open_disc_source(
     std::string* out_error) {
     cancel_async_cddb_lookup();
     pending_seek_active_ = false;
-    pending_seek_timer_ = 0.0;
+    pending_seek_was_playing_ = false;
     pending_seek_idle_frames_ = 0;
     playback_error_.clear();
 
@@ -203,7 +203,7 @@ void CdDisplayModel::clear_disc() noexcept {
     current_track_index_ = 0;
     track_elapsed_seconds_ = 0.0;
     pending_seek_active_ = false;
-    pending_seek_timer_ = 0.0;
+    pending_seek_was_playing_ = false;
     pending_seek_idle_frames_ = 0;
     playback_error_.clear();
     reset_volume_levels();
@@ -458,16 +458,18 @@ void CdDisplayModel::update(double delta_time_seconds) {
         poll_async_cddb_lookup();
 
         if (pending_seek_active_) {
-            pending_seek_timer_ += delta_time_seconds;
             ++pending_seek_idle_frames_;
-            if (pending_seek_timer_ >= 0.12 || pending_seek_idle_frames_ >= 2) {
+            if (pending_seek_idle_frames_ >= 2) {
                 try {
                     controller_->seekToLba(pending_seek_lba_);
+                    if (pending_seek_was_playing_) {
+                        controller_->play();
+                    }
                 } catch (const std::exception& ex) {
                     playback_error_ = ex.what();
                 }
                 pending_seek_active_ = false;
-                pending_seek_timer_ = 0.0;
+                pending_seek_was_playing_ = false;
                 pending_seek_idle_frames_ = 0;
             }
         }
@@ -481,7 +483,9 @@ void CdDisplayModel::update(double delta_time_seconds) {
         }
 
         playback_error_.clear();
-        playing_ = (st.state == mycds::PlaybackState::Playing);
+        playing_ = pending_seek_active_
+            ? pending_seek_was_playing_
+            : (st.state == mycds::PlaybackState::Playing);
         const int active_track_before_sync = current_track_number();
 
         if (!pending_seek_active_ && !(st.state == mycds::PlaybackState::Stopped && st.endOfDisc)) {
@@ -704,7 +708,7 @@ void CdDisplayModel::stop() {
     recording_ = false;
     playing_ = false;
     pending_seek_active_ = false;
-    pending_seek_timer_ = 0.0;
+    pending_seek_was_playing_ = false;
     pending_seek_idle_frames_ = 0;
     if (has_real_source_ && controller_) {
         controller_->stop();
@@ -744,7 +748,13 @@ void CdDisplayModel::seek_forward(double seconds) {
 
         if (!pending_seek_active_) {
             pending_seek_lba_ = std::clamp(controller_->currentLba(), min_lba, max_lba);
-            pending_seek_timer_ = 0.0;
+            pending_seek_was_playing_ = playing_;
+            if (playing_) {
+                try {
+                    controller_->pause();
+                } catch (...) {
+                }
+            }
         }
         const std::int64_t delta = std::max<std::int64_t>(
             1,
@@ -792,7 +802,13 @@ void CdDisplayModel::seek_backward(double seconds) {
 
         if (!pending_seek_active_) {
             pending_seek_lba_ = std::clamp(controller_->currentLba(), min_lba, max_lba);
-            pending_seek_timer_ = 0.0;
+            pending_seek_was_playing_ = playing_;
+            if (playing_) {
+                try {
+                    controller_->pause();
+                } catch (...) {
+                }
+            }
         }
         const std::int64_t delta = std::max<std::int64_t>(
             1,
@@ -836,7 +852,7 @@ void CdDisplayModel::seek_to_track_fraction(double fraction) {
 
     if (has_real_source_ && controller_ && !disc_layout_.tracks.empty()) {
         pending_seek_active_ = false;
-        pending_seek_timer_ = 0.0;
+        pending_seek_was_playing_ = false;
         pending_seek_idle_frames_ = 0;
 
         const int trk_num = current_track_number();
