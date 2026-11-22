@@ -419,14 +419,14 @@ int main(int argc, char* argv[]) {
             const bool fast_ff = ImGui::IsKeyDown(ImGuiKey_RightBracket) ||
                                  (io.KeyShift && ImGui::IsKeyDown(ImGuiKey_RightArrow));
             if (fast_rew) {
-                display_model.seek_backward(30.0 * seek_dt);
+                display_model.seek_backward(60.0 * seek_dt);
             } else if (ImGui::IsKeyDown(ImGuiKey_LeftArrow)) {
-                display_model.seek_backward(10.0 * seek_dt);
+                display_model.seek_backward(20.0 * seek_dt);
             }
             if (fast_ff) {
-                display_model.seek_forward(30.0 * seek_dt);
+                display_model.seek_forward(60.0 * seek_dt);
             } else if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) {
-                display_model.seek_forward(10.0 * seek_dt);
+                display_model.seek_forward(20.0 * seek_dt);
             }
             const bool vol_up = ImGui::IsKeyDown(ImGuiKey_UpArrow);
             const bool vol_down = ImGui::IsKeyDown(ImGuiKey_DownArrow);

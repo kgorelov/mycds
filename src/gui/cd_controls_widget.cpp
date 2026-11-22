@@ -519,8 +519,8 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
             const double held_time = ImGui::GetTime() - s_prev_tracker.press_start_time;
             if (held_time > 0.38) {
                 s_prev_tracker.did_long_press = true;
-                // Fast seek backward: 10 seconds per second
-                model.seek_backward(10.0 * static_cast<double>(io.DeltaTime));
+                const double speed = io.KeyShift ? 60.0 : 20.0;
+                model.seek_backward(speed * static_cast<double>(io.DeltaTime));
             }
         }
     } else {
@@ -593,8 +593,8 @@ void RenderCdControls(CdDisplayModel& model, const ImVec2& size) {
             const double held_time = ImGui::GetTime() - s_next_tracker.press_start_time;
             if (held_time > 0.38) {
                 s_next_tracker.did_long_press = true;
-                // Fast seek forward: 10 seconds per second
-                model.seek_forward(10.0 * static_cast<double>(io.DeltaTime));
+                const double speed = io.KeyShift ? 60.0 : 20.0;
+                model.seek_forward(speed * static_cast<double>(io.DeltaTime));
             }
         }
     } else {
