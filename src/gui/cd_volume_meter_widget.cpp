@@ -59,7 +59,7 @@ LedColorType GetSegmentColor(int index) {
 }
 
 void DrawSquareLed(ImDrawList* draw_list, ImVec2 pos, float size,
-                   LedColorType col_type, bool is_lit, bool is_peak) {
+                   LedColorType col_type, bool is_lit) {
     const ImVec2 max_pt(pos.x + size, pos.y + size);
 
     if (is_lit) {
@@ -100,11 +100,6 @@ void DrawSquareLed(ImDrawList* draw_list, ImVec2 pos, float size,
         draw_list->AddRectFilled(ImVec2(pos.x + 2.0f, pos.y + 2.0f),
                                  ImVec2(max_pt.x - 2.0f, pos.y + 5.0f),
                                  hi_col, 0.5f);
-
-        // If it's a floating peak hold dot, highlight the border
-        if (is_peak) {
-            draw_list->AddRect(pos, max_pt, IM_COL32(255, 255, 255, 180), 1.0f, 0, 1.2f);
-        }
     } else {
         // Unlit dark LED: Single direct fill without redundant well overdraw
         const ImU32 unlit_col = (col_type == LedColorType::Green) ? kGreenUnlit :
@@ -286,7 +281,7 @@ void RenderCdVolumeMeter(const CdDisplayModel& model, const ImVec2& user_size) {
         const bool is_pk = (i == peak_left_idx);
         const bool is_lit = is_bar_lit || is_pk;
 
-        DrawSquareLed(draw_list, led_pos, kLedSize, col, is_lit, is_pk && !is_bar_lit);
+        DrawSquareLed(draw_list, led_pos, kLedSize, col, is_lit);
     }
 
     // Render Right Channel Square LEDs
@@ -297,7 +292,7 @@ void RenderCdVolumeMeter(const CdDisplayModel& model, const ImVec2& user_size) {
         const bool is_pk = (i == peak_right_idx);
         const bool is_lit = is_bar_lit || is_pk;
 
-        DrawSquareLed(draw_list, led_pos, kLedSize, col, is_lit, is_pk && !is_bar_lit);
+        DrawSquareLed(draw_list, led_pos, kLedSize, col, is_lit);
     }
 
     // Peak Overload Indicators (PEAK L and PEAK R) on the right side
