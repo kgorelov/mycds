@@ -1785,7 +1785,9 @@ void RenderDiskInfoScreen(CdDisplayModel& model) {
             ImGui::PopStyleColor();
         }
     } else {
-        const float left_col_w = std::max(280.0f, avail_w * 0.42f);
+        const float header_h = 2.0f * ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
+        const float max_square_h = std::max(140.0f, avail_h - header_h - 52.0f);
+        const float left_col_w = std::clamp(max_square_h + 8.0f, 240.0f, std::max(240.0f, avail_w * 0.44f));
 
         // Left column: Square Multi-Inlay Cover Art Viewer + Album/Release Summary
         ImGui::BeginChild("##DiskInfoLeft", ImVec2(left_col_w, avail_h), false,
