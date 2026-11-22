@@ -1383,8 +1383,9 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
         } else if (is_cover_view) {
             constexpr float kMinCardW = 220.0f;
             constexpr float kCardGap = 14.0f;
-            constexpr float kGridPad = 12.0f;
-            const float avail_grid_w = std::max(kMinCardW, ImGui::GetContentRegionAvail().x - 2.0f * kGridPad);
+            constexpr float kGridPadX = 10.0f;
+            constexpr float kGridTopPad = 2.0f;
+            const float avail_grid_w = std::max(kMinCardW, ImGui::GetContentRegionAvail().x - 2.0f * kGridPadX);
             const int cover_cols = std::max(
                 1,
                 static_cast<int>((avail_grid_w + kCardGap) / (kMinCardW + kCardGap))
@@ -1392,10 +1393,10 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
             const float card_w = std::floor(
                 (avail_grid_w - static_cast<float>(cover_cols - 1) * kCardGap) / static_cast<float>(cover_cols)
             );
-            const float case_size = std::min(card_w, 240.0f);
+            const float case_size = std::min(card_w, 220.0f);
             const float line_h = ImGui::GetTextLineHeight();
-            const float meta_h = (line_h + 2.0f) * 3.0f + 4.0f;
-            const float card_h = case_size + 8.0f + meta_h;
+            const float meta_h = (line_h + 2.0f) * 3.0f + 2.0f;
+            const float card_h = case_size + 5.0f + meta_h;
 
             const ImVec2 grid_origin = ImGui::GetCursorPos();
             ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1410,8 +1411,8 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
                 const int row = static_cast<int>(i) / cover_cols;
 
                 ImGui::SetCursorPos(ImVec2(
-                    grid_origin.x + kGridPad + static_cast<float>(col) * (card_w + kCardGap),
-                    grid_origin.y + kGridPad + static_cast<float>(row) * (card_h + kCardGap)
+                    grid_origin.x + kGridPadX + static_cast<float>(col) * (card_w + kCardGap),
+                    grid_origin.y + kGridTopPad + static_cast<float>(row) * (card_h + kCardGap)
                 ));
                 const ImVec2 card_min = ImGui::GetCursorScreenPos();
                 const ImVec2 card_max(card_min.x + card_w, card_min.y + card_h);
@@ -1472,7 +1473,7 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
                 }
 
                 // Disc info underneath the square case: album, group/artist, year & genre
-                const ImVec2 text_clip_min(card_min.x, case_max.y + 8.0f);
+                const ImVec2 text_clip_min(card_min.x, case_max.y + 5.0f);
                 const ImVec2 text_clip_max(card_max.x, card_max.y);
                 dl->PushClipRect(text_clip_min, text_clip_max, true);
 
@@ -1493,7 +1494,7 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
             const int total_rows = (static_cast<int>(matches.size()) + cover_cols - 1) / cover_cols;
             ImGui::SetCursorPos(ImVec2(
                 grid_origin.x,
-                grid_origin.y + kGridPad + static_cast<float>(total_rows) * (card_h + kCardGap)
+                grid_origin.y + kGridTopPad + static_cast<float>(total_rows) * (card_h + kCardGap)
             ));
             ImGui::Dummy(ImVec2(1.0f, 1.0f));
         } else {
