@@ -30,22 +30,43 @@ and must not scroll the whole window!
   - Dynamic playlist size: spanning to the bottom of the window and to the right
   - CD cover widget will appear on the left size under the buttons in its own block if there's enough space.
 
-** TODO Proper minimum width and hight for widgets
 
-Minimum window width and hight: mandatory widgets: cd display, level meter, buttons.
+** DONE Proper minimum width and hight for widgets and layouts
+
+The idea is to make visibility and position of certain wingets conditional.
+Some widgets are mandatory and always visible on the screen: main cd display, level meter, buttons.
+Minimum window width and hight: mandatory widgets must stay visible
+
 Optional widgets: CD cover, playlist.
+Optinal widgets are visible only when there's enough room for them.
+CD cover: aspect ratio within the range of [0.5 .. 1.5], CD covers are quare
+Playlist: it shoud have some sensible minimal width so that text doesn't get scrambled. And minimal height.
 
-Several layouts:
+
+Then we can support several layouts that can be configured in settings:
   - minimal: cd screen + level meters + buttons, no playlist, no cd cover
   - vertical: playlist under the CD screens, meters and buttons. (no cd cover)
-  - horizontal: playlist to the right of cd screen and buttons (default)
+  - horizontal: playlist to the right of cd screen and buttons
   - maximal: like horizontal + cd cover under the cd screen, meters and buttons
+  - dynamic (default): defaults to horizontal but depending on the window size may turn into minimal or vertical.
+
+Honestly, I'm not sure if minimal and maximal are true layouts. I guess it's just a question of widgets visibility.
+So, yes, the layouts are horizontal and vertical (and dynamic which decides whether it should be horizontal or vertical at the moment).
+
+
+** DONE Bigger CD Rom Entries
+
+** DONE Bigger fonts in Image Load and Library
+
+** TODO Scaling factor
+In the settings. Half size. Full size. 125%.
+
+** DONE Eject menu adaptation for vertical and dynamic layouts
 
 ** TODO Playlist buttons
   - Add to playlist
   - Lyrics
   - Remove from playlist
-
 
 ** TODO Persistent state
 In ~/.config/mycds/state.json
@@ -57,7 +78,7 @@ In ~/.config/mycds/state.json
   - Last active "Eject" menu screen
   - Last visited directory (File/Image)
 
-** TODO About screen
+** DONE About screen
   - Short project
   - A link to github
   - Author / email
