@@ -474,9 +474,9 @@ void CdDisplayModel::update(double delta_time_seconds) {
 
         playback_error_.clear();
         playing_ = (st.state == mycds::PlaybackState::Playing);
+        const int active_track_before_sync = current_track_number();
 
-        if (!pending_seek_active_) {
-            const int prev_track_num = current_track_number();
+        if (!pending_seek_active_ && !(st.state == mycds::PlaybackState::Stopped && st.endOfDisc)) {
             if (st.position.trackNumber.has_value()) {
                 for (size_t i = 0; i < tracks_.size(); ++i) {
                     if (tracks_[i].number == *st.position.trackNumber) {
@@ -497,15 +497,30 @@ void CdDisplayModel::update(double delta_time_seconds) {
             // If single-track mode was toggled on mid-playback after next track was buffered,
             // enforce RepeatMode::Track / Shuffle transition at track boundary.
             if (playing_ && st.position.trackNumber.has_value() &&
-                prev_track_num > 0 && *st.position.trackNumber != prev_track_num) {
+                active_track_before_sync > 0 && *st.position.trackNumber != active_track_before_sync) {
                 if (repeat_mode_ == RepeatMode::Track) {
                     try {
-                        controller_->seekToTrack(prev_track_num);
+                        controller_->seekToTrack(active_track_before_sync);
+                        for (size_t i = 0; i < tracks_.size(); ++i) {
+                            if (tracks_[i].number == active_track_before_sync) {
+                                current_track_index_ = i;
+                                break;
+                            }
+                        }
+                        track_elapsed_seconds_ = 0.0;
                     } catch (...) {
                     }
                 } else if (shuffle_) {
                     try {
-                        controller_->seekToTrack(pick_random_playable_track());
+                        const int next_rand = pick_random_playable_track();
+                        controller_->seekToTrack(next_rand);
+                        for (size_t i = 0; i < tracks_.size(); ++i) {
+                            if (tracks_[i].number == next_rand) {
+                                current_track_index_ = i;
+                                break;
+                            }
+                        }
+                        track_elapsed_seconds_ = 0.0;
                     } catch (...) {
                     }
                 }
@@ -515,20 +530,37 @@ void CdDisplayModel::update(double delta_time_seconds) {
         if (st.state == mycds::PlaybackState::Stopped && st.endOfDisc) {
             try {
                 if (repeat_mode_ == RepeatMode::Track) {
-                    const int target = current_track_number() > 0
-                        ? current_track_number()
+                    const int target = active_track_before_sync > 0
+                        ? active_track_before_sync
                         : first_playable_track_number();
                     controller_->seekToTrack(target);
                     controller_->play();
                     playing_ = true;
+                    track_elapsed_seconds_ = 0.0;
                 } else if (shuffle_) {
-                    controller_->seekToTrack(pick_random_playable_track());
+                    const int next_rand = pick_random_playable_track();
+                    controller_->seekToTrack(next_rand);
+                    for (size_t i = 0; i < tracks_.size(); ++i) {
+                        if (tracks_[i].number == next_rand) {
+                            current_track_index_ = i;
+                            break;
+                        }
+                    }
                     controller_->play();
                     playing_ = true;
+                    track_elapsed_seconds_ = 0.0;
                 } else if (repeat_mode_ == RepeatMode::Disc) {
-                    controller_->seekToTrack(first_playable_track_number());
+                    const int first_trk = first_playable_track_number();
+                    controller_->seekToTrack(first_trk);
+                    for (size_t i = 0; i < tracks_.size(); ++i) {
+                        if (tracks_[i].number == first_trk) {
+                            current_track_index_ = i;
+                            break;
+                        }
+                    }
                     controller_->play();
                     playing_ = true;
+                    track_elapsed_seconds_ = 0.0;
                 } else {
                     controller_->stop();
                     playing_ = false;

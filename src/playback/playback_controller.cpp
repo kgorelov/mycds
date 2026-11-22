@@ -836,10 +836,29 @@ void PlaybackController::setSingleTrackMode(bool single_track) noexcept {
     if (!impl_) {
         return;
     }
-    std::lock_guard<std::mutex> lock(impl_->stateMutex);
-    impl_->singleTrackMode = single_track;
-    if (impl_->hasSourceFlag && impl_->state == PlaybackState::Stopped) {
-        impl_->playableEndLba = impl_->computePlayableEndLbaLocked(impl_->anchorLba);
+    bool need_reseek = false;
+    std::int64_t resume_lba = 0;
+    {
+        std::lock_guard<std::mutex> lock(impl_->stateMutex);
+        if (impl_->singleTrackMode == single_track) {
+            return;
+        }
+        impl_->singleTrackMode = single_track;
+        if (impl_->hasSourceFlag) {
+            if (impl_->state == PlaybackState::Stopped) {
+                impl_->playableEndLba = impl_->computePlayableEndLbaLocked(impl_->anchorLba);
+            } else if (impl_->state == PlaybackState::Playing ||
+                       impl_->state == PlaybackState::Paused) {
+                resume_lba = impl_->computePositionLocked().lba;
+                need_reseek = true;
+            }
+        }
+    }
+    if (need_reseek) {
+        try {
+            seekToLba(resume_lba);
+        } catch (...) {
+        }
     }
 }
 

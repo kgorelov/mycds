@@ -579,3 +579,56 @@ TEST(CdDisplayModelTests, RealPlaybackControllerIntegrationWithCueImage) {
 
     fs::remove_all(temp_dir, ec);
 }
+
+TEST(CdDisplayModelTests, RepeatOneKeepsPlayingCurrentTrack) {
+    namespace fs = std::filesystem;
+    const fs::path temp_dir = fs::temp_directory_path() / "mycds_display_model_repeat1_test";
+    std::error_code ec;
+    fs::remove_all(temp_dir, ec);
+    fs::create_directories(temp_dir, ec);
+
+    const fs::path bin_path = temp_dir / "repeat1.bin";
+    const fs::path cue_path = temp_dir / "repeat1.cue";
+
+    // 40 sectors total (~0.53s): Track 1 = 20 sectors (~0.27s), Track 2 = 20 sectors (~0.27s)
+    {
+        std::ofstream bin_out(bin_path, std::ios::binary);
+        const auto pcm = mycds::generate_sine_wave_pcm(440.0, 40, 0.4);
+        bin_out.write(
+            reinterpret_cast<const char*>(pcm.data()),
+            static_cast<std::streamsize>(pcm.size()));
+    }
+    {
+        std::ofstream cue_out(cue_path);
+        cue_out << "FILE \"repeat1.bin\" BINARY\n"
+                << "  TRACK 01 AUDIO\n"
+                << "    INDEX 01 00:00:00\n"
+                << "  TRACK 02 AUDIO\n"
+                << "    INDEX 01 00:00:20\n";
+    }
+
+    mycds::PlaybackControllerConfig cfg;
+    cfg.audioConfig.ringBufferSectors = 30;
+    cfg.audioConfig.preferredDriver = "dummy";
+    cfg.readChunkSectors = 4;
+    cfg.prebufferSectors = 4;
+
+    CdDisplayModel model(cfg);
+    model.set_repeat_mode(RepeatMode::Track);
+
+    std::string err;
+    ASSERT_TRUE(model.open_disc_source(mycds::open_image_source(cue_path.string()), &err)) << err;
+    EXPECT_EQ(model.current_track_number(), 1);
+    EXPECT_TRUE(model.is_playing());
+
+    // Poll for 0.65s (> 2x Track 1 duration): Track 1 must loop and never advance to Track 2
+    for (int i = 0; i < 45; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        model.update(0.015);
+        EXPECT_EQ(model.current_track_number(), 1);
+    }
+    EXPECT_TRUE(model.is_playing());
+
+    model.eject_disc();
+    fs::remove_all(temp_dir, ec);
+}
