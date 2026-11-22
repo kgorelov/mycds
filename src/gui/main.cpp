@@ -106,6 +106,9 @@ int main(int argc, char* argv[]) {
     const mycds::gui::AppSettings startup_settings =
         mycds::gui::load_app_settings(mycds::gui::default_settings_path());
     display_model.set_app_settings(startup_settings);
+    const mycds::gui::PersistentUiState startup_ui_state =
+        mycds::gui::load_ui_state(mycds::gui::default_ui_state_path());
+    display_model.set_active_eject_screen(startup_ui_state.last_eject_screen);
     if (!startup_settings.play_when_started) {
         display_model.stop();
     }

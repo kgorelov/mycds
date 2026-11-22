@@ -155,11 +155,21 @@ private:
 };
 
 // -----------------------------------------------------------------------------
-// Settings Persistence
+// Settings & UI State Persistence
 // -----------------------------------------------------------------------------
+
+struct PersistentUiState {
+    EjectMenuScreen last_eject_screen{EjectMenuScreen::Cd};
+    std::string last_visited_dir{};
+    std::string last_cd_rom{};
+};
 
 std::filesystem::path default_settings_path();
 AppSettings load_app_settings(const std::filesystem::path& path);
 bool save_app_settings(const std::filesystem::path& path, const AppSettings& settings);
+
+std::filesystem::path default_ui_state_path();
+PersistentUiState load_ui_state(const std::filesystem::path& path);
+bool save_ui_state(const std::filesystem::path& path, const PersistentUiState& state);
 
 } // namespace mycds::gui

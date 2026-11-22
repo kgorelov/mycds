@@ -43,6 +43,15 @@ const char* ScreenTitle(EjectMenuScreen screen) {
     return "EJECT MENU";
 }
 
+PersistentUiState& GetPersistentUiState() {
+    static PersistentUiState s_state = load_ui_state(default_ui_state_path());
+    return s_state;
+}
+
+void SavePersistentUiState() {
+    save_ui_state(default_ui_state_path(), GetPersistentUiState());
+}
+
 void DrawCornerScrews(ImDrawList* draw_list, const ImVec2& min_pos, const ImVec2& max_pos) {
     DrawChassisScrew(draw_list, ImVec2(min_pos.x + 10.0f, min_pos.y + 10.0f));
     DrawChassisScrew(draw_list, ImVec2(max_pos.x - 10.0f, min_pos.y + 10.0f));
@@ -236,6 +245,8 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
     };
 
     auto load_drive = [&](const mycds::CdDriveInfo& drv) {
+        GetPersistentUiState().last_cd_rom = drv.devicePath;
+        SavePersistentUiState();
         try {
             mycds::PhysicalCdSource source(drv.devicePath);
             LoadDiscSourceIntoModel(source, model);
@@ -250,6 +261,15 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
     if (!state.initialized) {
         state.initialized = true;
         refresh_drives();
+        const std::string& last_cd = GetPersistentUiState().last_cd_rom;
+        if (!last_cd.empty()) {
+            for (int i = 0; i < static_cast<int>(state.drives.size()); ++i) {
+                if (state.drives[static_cast<std::size_t>(i)].devicePath == last_cd) {
+                    state.selected_index = i;
+                    break;
+                }
+            }
+        }
     }
 
     ImGui::TextColored(ImVec4(0.78f, 0.82f, 0.88f, 1.0f),
@@ -316,6 +336,8 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
                     state.selected_index = i;
                     state.status_message.clear();
                     state.status_is_error = false;
+                    GetPersistentUiState().last_cd_rom = drv.devicePath;
+                    SavePersistentUiState();
                 }
                 if (double_clicked && drv.hasDisc) {
                     state.selected_index = i;
@@ -418,6 +440,8 @@ void RenderCdLoadScreen(CdDisplayModel& model) {
                                  ImVec2(btn_row_pos.x + 176.0f, btn_row_pos.y),
                                  ImVec2(160.0f, 38.0f), false, has_valid_drive)) {
         const auto& drv = state.drives[static_cast<std::size_t>(state.selected_index)];
+        GetPersistentUiState().last_cd_rom = drv.devicePath;
+        SavePersistentUiState();
         model.stop();
         if (mycds::eject_cd_drive(drv.devicePath)) {
             state.status_message = "Ejected tray: " + drv.devicePath;
@@ -635,15 +659,27 @@ void DrawBrowserEntryIcon(ImDrawList* draw_list, const ImVec2& center,
 }
 
 void RenderImageFileScreen(CdDisplayModel& model, bool just_entered) {
-    static FileBrowserState browser;
+    static FileBrowserState browser = []() {
+        std::error_code ec;
+        const std::string& saved_dir = GetPersistentUiState().last_visited_dir;
+        if (!saved_dir.empty() && std::filesystem::is_directory(saved_dir, ec)) {
+            return FileBrowserState(saved_dir);
+        }
+        return FileBrowserState();
+    }();
     static char path_buf[512] = "";
     static std::filesystem::path synced_dir;
     static bool parent_selected = false;
 
     if (synced_dir != browser.current_dir()) {
+        const bool user_navigated = !synced_dir.empty();
         synced_dir = browser.current_dir();
         std::snprintf(path_buf, sizeof(path_buf), "%s", synced_dir.string().c_str());
         parent_selected = false;
+        if (user_navigated) {
+            GetPersistentUiState().last_visited_dir = synced_dir.string();
+            SavePersistentUiState();
+        }
     }
 
     auto try_load_selected = [&](const std::filesystem::path& file_path) {
@@ -1538,6 +1574,8 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
                                      ImVec2(btn_width, kBtnHeight),
                                      is_active)) {
             model.set_active_eject_screen(item.screen);
+            GetPersistentUiState().last_eject_screen = item.screen;
+            SavePersistentUiState();
         }
         btn_y += kBtnHeight + kBtnGap;
     }

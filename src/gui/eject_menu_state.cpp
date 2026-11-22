@@ -643,17 +643,106 @@ std::vector<EditorialSource> DiskInfoState::editorial_sources_for_album(const st
 }
 
 // -----------------------------------------------------------------------------
-// Settings Persistence
+// Settings & UI State Persistence
 // -----------------------------------------------------------------------------
 
-std::filesystem::path default_settings_path() {
+namespace {
+
+std::filesystem::path config_file_path(const char* filename, const char* fallback_name) {
     if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && xdg[0] != '\0') {
-        return std::filesystem::path(xdg) / "mycds" / "settings.json";
+        return std::filesystem::path(xdg) / "mycds" / filename;
     }
     if (const char* home = std::getenv("HOME"); home && home[0] != '\0') {
-        return std::filesystem::path(home) / ".config" / "mycds" / "settings.json";
+        return std::filesystem::path(home) / ".config" / "mycds" / filename;
     }
-    return std::filesystem::path("mycds_settings.json");
+    return std::filesystem::path(fallback_name);
+}
+
+std::string escape_json_string(const std::string& input) {
+    std::string out;
+    out.reserve(input.size() + 8);
+    for (char ch : input) {
+        switch (ch) {
+            case '\\':
+                out += "\\\\";
+                break;
+            case '"':
+                out += "\\\"";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                out.push_back(ch);
+                break;
+        }
+    }
+    return out;
+}
+
+std::string parse_json_string_key(const std::string& content, const std::string& key,
+                                  const std::string& default_val) {
+    const auto pos = content.find("\"" + key + "\"");
+    if (pos == std::string::npos) {
+        return default_val;
+    }
+    const auto colon = content.find(':', pos);
+    if (colon == std::string::npos) {
+        return default_val;
+    }
+    const auto first_quote = content.find('"', colon + 1);
+    if (first_quote == std::string::npos) {
+        return default_val;
+    }
+
+    std::string result;
+    for (std::size_t i = first_quote + 1; i < content.size(); ++i) {
+        const char ch = content[i];
+        if (ch == '\\' && i + 1 < content.size()) {
+            const char next = content[++i];
+            switch (next) {
+                case '\\':
+                    result.push_back('\\');
+                    break;
+                case '"':
+                    result.push_back('"');
+                    break;
+                case 'n':
+                    result.push_back('\n');
+                    break;
+                case 'r':
+                    result.push_back('\r');
+                    break;
+                case 't':
+                    result.push_back('\t');
+                    break;
+                default:
+                    result.push_back(next);
+                    break;
+            }
+        } else if (ch == '"') {
+            return result;
+        } else {
+            result.push_back(ch);
+        }
+    }
+    return default_val;
+}
+
+} // namespace
+
+std::filesystem::path default_settings_path() {
+    return config_file_path("settings.json", "mycds_settings.json");
+}
+
+std::filesystem::path default_ui_state_path() {
+    return config_file_path("state.json", "mycds_state.json");
 }
 
 AppSettings load_app_settings(const std::filesystem::path& path) {
@@ -781,6 +870,76 @@ bool save_app_settings(const std::filesystem::path& path, const AppSettings& set
         << "  \"show_playlist\": " << (settings.show_playlist ? "true" : "false") << ",\n"
         << "  \"show_cd_cover\": " << (settings.show_cd_cover ? "true" : "false") << ",\n"
         << "  \"file_browser_view\": \"" << browser_view_str << "\"\n"
+        << "}\n";
+    return out.good();
+}
+
+PersistentUiState load_ui_state(const std::filesystem::path& path) {
+    PersistentUiState state;
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        return state;
+    }
+
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    const std::string content = ss.str();
+
+    const std::string screen_str = parse_json_string_key(content, "last_eject_screen", "cd");
+    if (screen_str == "image_file") {
+        state.last_eject_screen = EjectMenuScreen::ImageFile;
+    } else if (screen_str == "library") {
+        state.last_eject_screen = EjectMenuScreen::Library;
+    } else if (screen_str == "disk_info") {
+        state.last_eject_screen = EjectMenuScreen::DiskInfo;
+    } else if (screen_str == "settings") {
+        state.last_eject_screen = EjectMenuScreen::Settings;
+    } else {
+        state.last_eject_screen = EjectMenuScreen::Cd;
+    }
+
+    state.last_visited_dir = parse_json_string_key(content, "last_visited_dir", "");
+    state.last_cd_rom = parse_json_string_key(content, "last_cd_rom", "");
+    return state;
+}
+
+bool save_ui_state(const std::filesystem::path& path, const PersistentUiState& state) {
+    std::error_code ec;
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec) {
+            return false;
+        }
+    }
+
+    std::ofstream out(path, std::ios::trunc);
+    if (!out.is_open()) {
+        return false;
+    }
+
+    const char* screen_str = "cd";
+    switch (state.last_eject_screen) {
+        case EjectMenuScreen::Cd:
+            screen_str = "cd";
+            break;
+        case EjectMenuScreen::ImageFile:
+            screen_str = "image_file";
+            break;
+        case EjectMenuScreen::Library:
+            screen_str = "library";
+            break;
+        case EjectMenuScreen::DiskInfo:
+            screen_str = "disk_info";
+            break;
+        case EjectMenuScreen::Settings:
+            screen_str = "settings";
+            break;
+    }
+
+    out << "{\n"
+        << "  \"last_eject_screen\": \"" << screen_str << "\",\n"
+        << "  \"last_visited_dir\": \"" << escape_json_string(state.last_visited_dir) << "\",\n"
+        << "  \"last_cd_rom\": \"" << escape_json_string(state.last_cd_rom) << "\"\n"
         << "}\n";
     return out.good();
 }

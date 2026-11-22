@@ -543,3 +543,23 @@ TEST_F(CdControlsWidgetTest, RenderImageFileScreenBothViewModesHeadless) {
         ImGui::Render();
     }
 }
+
+TEST(UiStateTests, PersistenceRoundTrip) {
+    const std::filesystem::path state_path =
+        std::filesystem::temp_directory_path() / "mycds_ui_state_test" / "state.json";
+    std::error_code ec;
+    std::filesystem::remove_all(state_path.parent_path(), ec);
+
+    PersistentUiState saved;
+    saved.last_eject_screen = EjectMenuScreen::ImageFile;
+    saved.last_visited_dir = "/tmp/music/Pink Floyd \"Wish\"";
+    saved.last_cd_rom = "/dev/sr1";
+    EXPECT_TRUE(save_ui_state(state_path, saved));
+
+    const PersistentUiState loaded = load_ui_state(state_path);
+    EXPECT_EQ(loaded.last_eject_screen, EjectMenuScreen::ImageFile);
+    EXPECT_EQ(loaded.last_visited_dir, "/tmp/music/Pink Floyd \"Wish\"");
+    EXPECT_EQ(loaded.last_cd_rom, "/dev/sr1");
+
+    std::filesystem::remove_all(state_path.parent_path(), ec);
+}
