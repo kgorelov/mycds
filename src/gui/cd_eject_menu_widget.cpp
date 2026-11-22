@@ -476,6 +476,8 @@ enum class NavButtonIcon {
     Home,
     Root,
     Up,
+    Prev,
+    Next,
     Refresh,
     ViewList,
     ViewIcons,
@@ -520,6 +522,22 @@ void DrawNavButtonIcon(ImDrawList* draw_list, const ImVec2& center, NavButtonIco
                              ImVec2(center.x, center.y - 6.5f), col, t, is_bright);
             DrawDiffusedLine(draw_list, ImVec2(center.x + 5.5f, center.y - 0.5f),
                              ImVec2(center.x, center.y - 6.5f), col, t, is_bright);
+            break;
+        }
+        case NavButtonIcon::Prev: {
+            // Left chevron (<)
+            DrawDiffusedLine(draw_list, ImVec2(center.x + 3.5f, center.y - 6.5f),
+                             ImVec2(center.x - 3.5f, center.y), col, t, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 3.5f, center.y),
+                             ImVec2(center.x + 3.5f, center.y + 6.5f), col, t, is_bright);
+            break;
+        }
+        case NavButtonIcon::Next: {
+            // Right chevron (>)
+            DrawDiffusedLine(draw_list, ImVec2(center.x - 3.5f, center.y - 6.5f),
+                             ImVec2(center.x + 3.5f, center.y), col, t, is_bright);
+            DrawDiffusedLine(draw_list, ImVec2(center.x + 3.5f, center.y),
+                             ImVec2(center.x - 3.5f, center.y + 6.5f), col, t, is_bright);
             break;
         }
         case NavButtonIcon::Refresh: {
@@ -1596,21 +1614,15 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
 
 void RenderDiskInfoScreen(CdDisplayModel& model) {
     static DiskInfoState info_state;
+    static int narrow_tab = 0; // 0 = Cover, 1 = Album Info, 2 = Tracks Info
 
     ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.25f);
     const float avail_w = ImGui::GetContentRegionAvail().x;
     const float avail_h = ImGui::GetContentRegionAvail().y;
-    const float left_col_w = std::max(280.0f, avail_w * 0.42f);
+    constexpr float kMinSplitWidth = 720.0f;
+    const bool use_vertical_tabs = (avail_w < kMinSplitWidth);
 
-    // Left column: Large Multi-Inlay Cover Art Viewer + Album/Release Summary
-    ImGui::BeginChild("##DiskInfoLeft", ImVec2(left_col_w, avail_h), false,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    {
-        const auto& slots = info_state.inlay_slots();
-        const std::size_t inlay_idx = info_state.active_inlay_index();
-        const InlayImageSlot& active_slot = slots[inlay_idx];
-
-        // Album title & release year header
+    auto render_album_header = [&]() {
         ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s", model.album_title().c_str());
         const auto release_year = info_state.release_year_for_album(model.artist_name(), model.album_title());
         if (release_year.has_value()) {
@@ -1619,22 +1631,34 @@ void RenderDiskInfoScreen(CdDisplayModel& model) {
             ImGui::Text("Artist: %s  |  Released: Unknown", model.artist_name().c_str());
         }
         ImGui::Spacing();
+    };
 
-        // Large Cover / Inlay Artwork Card filling most of the left column without overflowing
-        const float remaining_h = ImGui::GetContentRegionAvail().y;
-        const float controls_reserve_h = 64.0f;
-        const float art_w = std::max(180.0f, left_col_w - 8.0f);
-        const float art_h = std::max(140.0f, remaining_h - controls_reserve_h);
-        const ImVec2 art_min = ImGui::GetCursorScreenPos();
-        const ImVec2 art_max(art_min.x + art_w, art_min.y + art_h);
+    auto render_cover_viewer = [&](float region_w, float region_h) {
+        const auto& slots = info_state.inlay_slots();
+        const std::size_t inlay_idx = info_state.active_inlay_index();
+        const InlayImageSlot& active_slot = slots[inlay_idx];
+
+        constexpr float kBtnW = 42.0f;
+        constexpr float kBtnH = 34.0f;
+        constexpr float kBtnGap = 14.0f;
+        constexpr float kControlsReserveH = 52.0f;
+
+        const float max_art_w = std::max(140.0f, region_w - 8.0f);
+        const float max_art_h = std::max(140.0f, region_h - kControlsReserveH);
+        const float art_size = std::min(max_art_w, max_art_h);
+
+        const ImVec2 cursor_start = ImGui::GetCursorScreenPos();
+        const float art_x = cursor_start.x + (region_w - art_size) * 0.5f;
+        const ImVec2 art_min(art_x, cursor_start.y);
+        const ImVec2 art_max(art_x + art_size, art_min.y + art_size);
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
         draw_list->AddRectFilled(art_min, art_max, IM_COL32(16, 18, 22, 255), 4.0f);
         draw_list->AddRect(art_min, art_max, IM_COL32(0, 180, 220, 140), 4.0f, 0, 1.5f);
 
-        // Stylized CD jewel-case disc graphic scaled to the cover frame
-        const float disc_radius = std::max(36.0f, std::min(art_w, art_h) * 0.34f);
-        const ImVec2 disc_center(art_min.x + art_w * 0.5f, art_min.y + art_h * 0.5f);
+        // Stylized CD jewel-case disc graphic scaled to the square cover frame
+        const float disc_radius = std::max(36.0f, art_size * 0.34f);
+        const ImVec2 disc_center(art_min.x + art_size * 0.5f, art_min.y + art_size * 0.5f);
         draw_list->AddCircle(disc_center, disc_radius, IM_COL32(0, 210, 240, 140), 48, 1.8f);
         draw_list->AddCircle(disc_center, disc_radius * 0.68f, IM_COL32(0, 160, 195, 70), 40, 1.0f);
         draw_list->AddCircle(disc_center, disc_radius * 0.30f, IM_COL32(0, 210, 240, 120), 28, 1.3f);
@@ -1643,105 +1667,168 @@ void RenderDiskInfoScreen(CdDisplayModel& model) {
         char slot_badge[64];
         std::snprintf(slot_badge, sizeof(slot_badge), "%zu / %zu: %s",
                       inlay_idx + 1, slots.size(), active_slot.label.c_str());
+        draw_list->PushClipRect(art_min, art_max, true);
         draw_list->AddText(ImVec2(art_min.x + 12.0f, art_min.y + 10.0f), kColCyanBright, slot_badge);
         draw_list->AddText(ImVec2(art_min.x + 12.0f, art_max.y - 28.0f),
                            IM_COL32(170, 180, 195, 220), active_slot.subtitle.c_str());
+        draw_list->PopClipRect();
 
-        ImGui::Dummy(ImVec2(art_w, art_h + 6.0f));
+        ImGui::Dummy(ImVec2(region_w, art_size + 8.0f));
 
-        // Prev / Next inlay switcher buttons centered under cover
-        const ImVec2 nav_pos = ImGui::GetCursorScreenPos();
-        if (RenderHardwareTextButton("##InlayPrev", "< Prev", nav_pos, ImVec2(104.0f, 34.0f))) {
+        // Prev / Next icon buttons centered underneath the square cover
+        const float total_nav_w = 2.0f * kBtnW + kBtnGap;
+        const ImVec2 nav_row_pos = ImGui::GetCursorScreenPos();
+        const float nav_start_x = cursor_start.x + (region_w - total_nav_w) * 0.5f;
+        if (RenderHardwareIconButton("##InlayPrev", ImVec2(nav_start_x, nav_row_pos.y),
+                                     ImVec2(kBtnW, kBtnH), NavButtonIcon::Prev, "Previous inlay")) {
             info_state.prev_inlay();
         }
-        if (RenderHardwareTextButton("##InlayNext", "Next >",
-                                     ImVec2(nav_pos.x + 114.0f, nav_pos.y), ImVec2(104.0f, 34.0f))) {
+        if (RenderHardwareIconButton("##InlayNext", ImVec2(nav_start_x + kBtnW + kBtnGap, nav_row_pos.y),
+                                     ImVec2(kBtnW, kBtnH), NavButtonIcon::Next, "Next inlay")) {
             info_state.next_inlay();
         }
-        ImGui::SetCursorScreenPos(ImVec2(nav_pos.x, nav_pos.y + 38.0f));
+        ImGui::SetCursorScreenPos(ImVec2(cursor_start.x, nav_row_pos.y + kBtnH + 4.0f));
         ImGui::Dummy(ImVec2(1.0f, 1.0f));
-    }
-    ImGui::EndChild();
+    };
 
-    ImGui::SameLine(0.0f, 16.0f);
-
-    // Right column: Two tabs ("Album info" and "Tracks info")
-    ImGui::BeginChild("##DiskInfoRight", ImVec2(0.0f, avail_h), false);
-    {
-        const ImVec2 tab_pos = ImGui::GetCursorScreenPos();
-        const std::size_t active_tab = info_state.active_source_index() % 2;
-
-        if (RenderHardwareTextButton("##InfoTabAlbum", "Album info",
-                                     tab_pos, ImVec2(160.0f, 36.0f), active_tab == 0)) {
-            info_state.set_active_source_index(0);
+    auto render_album_info = [&]() {
+        const auto sources = info_state.editorial_sources_for_album(
+            model.artist_name(), model.album_title());
+        for (std::size_t i = 0; i < sources.size(); ++i) {
+            if (i > 0) {
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+            }
+            ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s",
+                               sources[i].sourceName.c_str());
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", sources[i].text.c_str());
         }
-        if (RenderHardwareTextButton("##InfoTabTracks", "Tracks info",
-                                     ImVec2(tab_pos.x + 170.0f, tab_pos.y), ImVec2(160.0f, 36.0f), active_tab == 1)) {
-            info_state.set_active_source_index(1);
+    };
+
+    auto render_tracks_info = [&]() {
+        const auto& tracks = model.tracks();
+        int total_seconds = 0;
+        for (const auto& trk : tracks) {
+            total_seconds += std::max(0, trk.duration_seconds);
+        }
+        const std::string total_dur = FormatDurationMmSs(total_seconds);
+        ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f),
+                           "Tracklist (%zu tracks, Total %s)", tracks.size(), total_dur.c_str());
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (ImGui::BeginTable("##DiskInfoTrackTable", 3,
+                              ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
+            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 36.0f);
+            ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Duration", ImGuiTableColumnFlags_WidthFixed, 72.0f);
+            ImGui::TableHeadersRow();
+
+            for (const auto& trk : tracks) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%02d", trk.number);
+
+                ImGui::TableSetColumnIndex(1);
+                const std::string title = trk.title.empty()
+                    ? ("Track " + std::to_string(trk.number))
+                    : trk.title;
+                ImGui::TextUnformatted(title.c_str());
+
+                ImGui::TableSetColumnIndex(2);
+                const std::string dur = FormatDurationMmSs(trk.duration_seconds);
+                ImGui::TextUnformatted(dur.c_str());
+            }
+            ImGui::EndTable();
+        }
+    };
+
+    if (use_vertical_tabs) {
+        render_album_header();
+
+        constexpr float kTabGap = 8.0f;
+        const float tab_w = std::max(90.0f, std::floor((avail_w - 2.0f * kTabGap) / 3.0f));
+        const ImVec2 tab_pos = ImGui::GetCursorScreenPos();
+        if (RenderHardwareTextButton("##InfoTabCover", "Cover",
+                                     tab_pos, ImVec2(tab_w, 36.0f), narrow_tab == 0)) {
+            narrow_tab = 0;
+        }
+        if (RenderHardwareTextButton("##InfoTabAlbum", "Album Info",
+                                     ImVec2(tab_pos.x + tab_w + kTabGap, tab_pos.y),
+                                     ImVec2(tab_w, 36.0f), narrow_tab == 1)) {
+            narrow_tab = 1;
+        }
+        if (RenderHardwareTextButton("##InfoTabTracks", "Tracks Info",
+                                     ImVec2(tab_pos.x + 2.0f * (tab_w + kTabGap), tab_pos.y),
+                                     ImVec2(tab_w, 36.0f), narrow_tab == 2)) {
+            narrow_tab = 2;
         }
         ImGui::SetCursorScreenPos(ImVec2(tab_pos.x, tab_pos.y + 46.0f));
 
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
-        ImGui::BeginChild("##DiskInfoTabContent", ImVec2(0.0f, 0.0f), true);
-        {
-            if (active_tab == 0) {
-                // Aggregated Album Info (Wikipedia, Music Magazines, Liner Notes)
-                const auto sources = info_state.editorial_sources_for_album(
-                    model.artist_name(), model.album_title());
-                for (std::size_t i = 0; i < sources.size(); ++i) {
-                    if (i > 0) {
-                        ImGui::Spacing();
-                        ImGui::Separator();
-                        ImGui::Spacing();
-                    }
-                    ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f), "%s",
-                                       sources[i].sourceName.c_str());
-                    ImGui::Spacing();
-                    ImGui::TextWrapped("%s", sources[i].text.c_str());
-                }
+        if (narrow_tab == 0) {
+            const float rem_h = std::max(190.0f, ImGui::GetContentRegionAvail().y);
+            ImGui::BeginChild("##DiskInfoCoverTab", ImVec2(0.0f, rem_h), false,
+                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+            render_cover_viewer(avail_w, rem_h);
+            ImGui::EndChild();
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
+            ImGui::BeginChild("##DiskInfoTabContent", ImVec2(0.0f, 0.0f), true);
+            if (narrow_tab == 1) {
+                render_album_info();
             } else {
-                // Tracks Info tab
-                const auto& tracks = model.tracks();
-                int total_seconds = 0;
-                for (const auto& trk : tracks) {
-                    total_seconds += std::max(0, trk.duration_seconds);
-                }
-                const std::string total_dur = FormatDurationMmSs(total_seconds);
-                ImGui::TextColored(ImVec4(0.0f, 0.90f, 1.0f, 1.0f),
-                                   "Tracklist (%zu tracks, Total %s)", tracks.size(), total_dur.c_str());
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                if (ImGui::BeginTable("##DiskInfoTrackTable", 3,
-                                      ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
-                    ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 36.0f);
-                    ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_WidthStretch);
-                    ImGui::TableSetupColumn("Duration", ImGuiTableColumnFlags_WidthFixed, 72.0f);
-                    ImGui::TableHeadersRow();
-
-                    for (const auto& trk : tracks) {
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::Text("%02d", trk.number);
-
-                        ImGui::TableSetColumnIndex(1);
-                        const std::string title = trk.title.empty()
-                            ? ("Track " + std::to_string(trk.number))
-                            : trk.title;
-                        ImGui::TextUnformatted(title.c_str());
-
-                        ImGui::TableSetColumnIndex(2);
-                        const std::string dur = FormatDurationMmSs(trk.duration_seconds);
-                        ImGui::TextUnformatted(dur.c_str());
-                    }
-                    ImGui::EndTable();
-                }
+                render_tracks_info();
             }
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+        }
+    } else {
+        const float left_col_w = std::max(280.0f, avail_w * 0.42f);
+
+        // Left column: Square Multi-Inlay Cover Art Viewer + Album/Release Summary
+        ImGui::BeginChild("##DiskInfoLeft", ImVec2(left_col_w, avail_h), false,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        {
+            render_album_header();
+            render_cover_viewer(left_col_w, ImGui::GetContentRegionAvail().y);
         }
         ImGui::EndChild();
-        ImGui::PopStyleColor();
+
+        ImGui::SameLine(0.0f, 16.0f);
+
+        // Right column: Two tabs ("Album info" and "Tracks info")
+        ImGui::BeginChild("##DiskInfoRight", ImVec2(0.0f, avail_h), false);
+        {
+            const ImVec2 tab_pos = ImGui::GetCursorScreenPos();
+            const std::size_t active_tab = info_state.active_source_index() % 2;
+
+            if (RenderHardwareTextButton("##InfoTabAlbum", "Album Info",
+                                         tab_pos, ImVec2(160.0f, 36.0f), active_tab == 0)) {
+                info_state.set_active_source_index(0);
+            }
+            if (RenderHardwareTextButton("##InfoTabTracks", "Tracks Info",
+                                         ImVec2(tab_pos.x + 170.0f, tab_pos.y), ImVec2(160.0f, 36.0f), active_tab == 1)) {
+                info_state.set_active_source_index(1);
+            }
+            ImGui::SetCursorScreenPos(ImVec2(tab_pos.x, tab_pos.y + 46.0f));
+
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
+            ImGui::BeginChild("##DiskInfoTabContent", ImVec2(0.0f, 0.0f), true);
+            {
+                if (active_tab == 0) {
+                    render_album_info();
+                } else {
+                    render_tracks_info();
+                }
+            }
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+        }
+        ImGui::EndChild();
     }
-    ImGui::EndChild();
+
     ImGui::PopFont();
 }
 
