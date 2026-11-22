@@ -104,6 +104,21 @@ public:
     void seekToTrack(int trackNumber);
     void seekToLba(std::int64_t lba);
 
+    void setVolume(double volume) noexcept;
+    double volume() const noexcept;
+
+    void setBalance(double balance) noexcept;
+    double balance() const noexcept;
+
+    AudioMeterLevels meterLevels() const noexcept;
+
+    void setSingleTrackMode(bool single_track) noexcept;
+    bool singleTrackMode() const noexcept;
+
+    void updateMetadata(
+        const DiscMetadata& disc_meta,
+        const std::vector<TrackMetadata>& track_meta);
+
     bool hasSource() const noexcept;
     PlaybackState state() const noexcept;
     PlaybackStatus status() const;

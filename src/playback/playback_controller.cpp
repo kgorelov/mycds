@@ -88,6 +88,9 @@ struct PlaybackController::Impl {
 
     bool hasSourceFlag{false};
     PlaybackState state{PlaybackState::Stopped};
+    bool singleTrackMode{false};
+    double desiredVolume{0.8};
+    double desiredBalance{0.0};
     std::int64_t defaultStartLba{0};
     std::int64_t anchorLba{0};
     std::int64_t playableEndLba{0};
@@ -376,6 +379,16 @@ struct PlaybackController::Impl {
         cv.notify_all();
     }
 
+    std::int64_t computePlayableEndLbaLocked(std::int64_t start_lba) const noexcept {
+        if (singleTrackMode) {
+            if (const TrackInfo* trk = find_track_at_lba(layout.tracks, start_lba)) {
+                return (trk->type == TrackType::Audio) ? trk->endLba : start_lba;
+            }
+            return start_lba;
+        }
+        return compute_contiguous_audio_end_lba(layout.tracks, start_lba);
+    }
+
     void startStreamingFromAnchor() {
         stopWorker();
 
@@ -387,7 +400,7 @@ struct PlaybackController::Impl {
             std::lock_guard<std::mutex> lock(stateMutex);
             audio.stop();
 
-            playableEndLba = compute_contiguous_audio_end_lba(layout.tracks, anchorLba);
+            playableEndLba = computePlayableEndLbaLocked(anchorLba);
             if (playableEndLba <= anchorLba) {
                 throw DiscSourceError(
                     DiscSourceErrorKind::NonAudioTrack,
@@ -489,6 +502,8 @@ struct PlaybackController::Impl {
         }
 
         audio.open(config.audioConfig);
+        audio.setVolume(desiredVolume);
+        audio.setBalance(desiredBalance);
 
         {
             std::lock_guard<std::mutex> state_lock(stateMutex);
@@ -499,8 +514,7 @@ struct PlaybackController::Impl {
 
             defaultStartLba = first_audio->index01Lba;
             anchorLba = defaultStartLba;
-            playableEndLba =
-                compute_contiguous_audio_end_lba(layout.tracks, anchorLba);
+            playableEndLba = computePlayableEndLbaLocked(anchorLba);
             state = PlaybackState::Stopped;
             endOfDisc = false;
             sectorsReadInSession = 0;
@@ -601,8 +615,7 @@ struct PlaybackController::Impl {
         audio.stop();
         state = PlaybackState::Stopped;
         anchorLba = defaultStartLba;
-        playableEndLba =
-            compute_contiguous_audio_end_lba(layout.tracks, anchorLba);
+        playableEndLba = computePlayableEndLbaLocked(anchorLba);
         endOfDisc = false;
         sectorsReadInSession = 0;
         lastSessionBytesConsumed = 0;
@@ -650,7 +663,7 @@ struct PlaybackController::Impl {
             audio.setEndOfStream(false);
 
             anchorLba = lba;
-            playableEndLba = compute_contiguous_audio_end_lba(layout.tracks, lba);
+            playableEndLba = computePlayableEndLbaLocked(lba);
             endOfDisc = false;
             sectorsReadInSession = 0;
             lastSessionBytesConsumed = 0;
@@ -770,6 +783,86 @@ void PlaybackController::seekToTrack(int trackNumber) {
 
 void PlaybackController::seekToLba(std::int64_t lba) {
     impl_->seekToLba(lba);
+}
+
+void PlaybackController::setVolume(double volume) noexcept {
+    if (!impl_) {
+        return;
+    }
+    const double clamped = std::clamp(volume, 0.0, 1.0);
+    {
+        std::lock_guard<std::mutex> lock(impl_->stateMutex);
+        impl_->desiredVolume = clamped;
+    }
+    impl_->audio.setVolume(clamped);
+}
+
+double PlaybackController::volume() const noexcept {
+    if (!impl_) {
+        return 0.8;
+    }
+    std::lock_guard<std::mutex> lock(impl_->stateMutex);
+    return impl_->desiredVolume;
+}
+
+void PlaybackController::setBalance(double balance) noexcept {
+    if (!impl_) {
+        return;
+    }
+    const double clamped = std::clamp(balance, -1.0, 1.0);
+    {
+        std::lock_guard<std::mutex> lock(impl_->stateMutex);
+        impl_->desiredBalance = clamped;
+    }
+    impl_->audio.setBalance(clamped);
+}
+
+double PlaybackController::balance() const noexcept {
+    if (!impl_) {
+        return 0.0;
+    }
+    std::lock_guard<std::mutex> lock(impl_->stateMutex);
+    return impl_->desiredBalance;
+}
+
+AudioMeterLevels PlaybackController::meterLevels() const noexcept {
+    if (!impl_) {
+        return AudioMeterLevels{};
+    }
+    return impl_->audio.meterLevels();
+}
+
+void PlaybackController::setSingleTrackMode(bool single_track) noexcept {
+    if (!impl_) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(impl_->stateMutex);
+    impl_->singleTrackMode = single_track;
+    if (impl_->hasSourceFlag && impl_->state == PlaybackState::Stopped) {
+        impl_->playableEndLba = impl_->computePlayableEndLbaLocked(impl_->anchorLba);
+    }
+}
+
+bool PlaybackController::singleTrackMode() const noexcept {
+    if (!impl_) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(impl_->stateMutex);
+    return impl_->singleTrackMode;
+}
+
+void PlaybackController::updateMetadata(
+    const DiscMetadata& disc_meta,
+    const std::vector<TrackMetadata>& track_meta) {
+    if (!impl_) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(impl_->stateMutex);
+    if (!impl_->hasSourceFlag) {
+        return;
+    }
+    impl_->layout.discMetadata = disc_meta;
+    impl_->layout.trackMetadata = track_meta;
 }
 
 bool PlaybackController::hasSource() const noexcept {

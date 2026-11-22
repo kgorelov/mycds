@@ -705,5 +705,61 @@ TEST(PlaybackControllerTest, ReferenceImageAndPhysicalCdExitCriterion) {
     }
 }
 
+TEST(PlaybackControllerTest, SingleTrackModeAndVolumeBalanceForwarding) {
+    PlaybackController controller(PlaybackControllerConfig{
+        .audioConfig = {.ringBufferSectors = 40, .preferredDriver = "dummy"},
+        .readChunkSectors = 4,
+        .prebufferSectors = 4,
+    });
+
+    controller.setVolume(0.6);
+    controller.setBalance(-0.5);
+    EXPECT_DOUBLE_EQ(controller.volume(), 0.6);
+    EXPECT_DOUBLE_EQ(controller.balance(), -0.5);
+
+    controller.setSingleTrackMode(true);
+    EXPECT_TRUE(controller.singleTrackMode());
+
+    auto mock = std::make_unique<MockDiscSource>(make_three_track_layout_with_pregap());
+    auto* mock_ptr = mock.get();
+    controller.openSource(std::move(mock));
+
+    // Verify metadata update works on open source
+    DiscMetadata dm;
+    dm.title = "Updated Title";
+    dm.performer = "Updated Artist";
+    controller.updateMetadata(dm, {TrackMetadata{.trackNumber = 1, .title = "One"}});
+    EXPECT_EQ(controller.getDiscLayout().discMetadata.title, "Updated Title");
+    ASSERT_EQ(controller.getDiscLayout().trackMetadata.size(), 1u);
+    EXPECT_EQ(controller.getDiscLayout().trackMetadata[0].title, "One");
+
+    // In single-track mode, Track 1 [0, 8) stops cleanly at LBA 8
+    controller.play();
+    ASSERT_TRUE(wait_until([&]() {
+        const auto st = controller.status();
+        return st.state == PlaybackState::Stopped && st.endOfDisc;
+    }));
+
+    const auto t1_st = controller.status();
+    EXPECT_EQ(t1_st.position.lba, 8);
+    EXPECT_EQ(t1_st.sectorsReadInSession, 8ULL);
+    EXPECT_EQ(mock_ptr->flattenedReadSectors().size(), 8U);
+
+    // Disable single-track mode, seek to Track 2, and play gaplessly to end of disc (LBA 28)
+    controller.setSingleTrackMode(false);
+    EXPECT_FALSE(controller.singleTrackMode());
+    controller.seekToTrack(2);
+    controller.play();
+    ASSERT_TRUE(wait_until([&]() {
+        const auto st = controller.status();
+        return st.state == PlaybackState::Stopped && st.endOfDisc;
+    }));
+
+    const auto t2_st = controller.status();
+    EXPECT_EQ(t2_st.position.lba, 28);
+    EXPECT_EQ(t2_st.sectorsReadInSession, 16ULL); // LBAs 12..27
+    controller.closeSource();
+}
+
 } // namespace
 } // namespace mycds

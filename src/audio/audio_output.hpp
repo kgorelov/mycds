@@ -17,6 +17,11 @@ struct AudioOutputConfig {
     std::string preferredDriver{};      // Optional SDL audio driver hint (e.g. "dummy" in tests)
 };
 
+struct AudioMeterLevels {
+    double left{0.0};
+    double right{0.0};
+};
+
 // Generates canonical S16LE 44.1 kHz stereo interleaved PCM containing a sine wave
 // test signal for the specified number of CD-DA sectors (2352 bytes / 588 frames each).
 std::vector<std::byte> generate_sine_wave_pcm(
@@ -60,6 +65,14 @@ public:
 
     std::uint64_t totalBytesConsumed() const noexcept;
     std::uint64_t underrunCount() const noexcept;
+
+    void setVolume(double volume) noexcept;
+    double volume() const noexcept;
+
+    void setBalance(double balance) noexcept;
+    double balance() const noexcept;
+
+    AudioMeterLevels meterLevels() const noexcept;
 
     std::string driverName() const;
     std::string deviceName() const;

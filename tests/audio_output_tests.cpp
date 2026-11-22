@@ -160,5 +160,85 @@ TEST(AudioOutputTest, ContinuousTestTonePlaybackIndependentlyOfCdAccess) {
     EXPECT_TRUE(play_test_tone(440.0, 0.15, "", error_msg)) << error_msg;
 }
 
+TEST(AudioOutputTest, VolumeBalanceAndMeterLevels) {
+    AudioOutput output;
+    EXPECT_NEAR(output.volume(), 0.8, 1e-6);
+    EXPECT_DOUBLE_EQ(output.balance(), 0.0);
+    EXPECT_DOUBLE_EQ(output.meterLevels().left, 0.0);
+    EXPECT_DOUBLE_EQ(output.meterLevels().right, 0.0);
+
+    output.setVolume(1.5);
+    EXPECT_DOUBLE_EQ(output.volume(), 1.0);
+    output.setVolume(-0.2);
+    EXPECT_DOUBLE_EQ(output.volume(), 0.0);
+    output.setVolume(0.8);
+
+    output.setBalance(2.0);
+    EXPECT_DOUBLE_EQ(output.balance(), 1.0);
+    output.setBalance(-2.0);
+    EXPECT_DOUBLE_EQ(output.balance(), -1.0);
+    output.setBalance(0.0);
+
+    // 100 sectors (~1.33s) of full-scale 440 Hz stereo sine wave
+    const std::vector<std::byte> signal = generate_sine_wave_pcm(440.0, 100, 0.5);
+
+    output.open(AudioOutputConfig{.ringBufferSectors = 120, .preferredDriver = "dummy"});
+    ASSERT_EQ(output.enqueuePcm(signal), signal.size());
+
+    auto wait_until = [](auto pred) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (pred()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return pred();
+    };
+
+    output.start();
+    ASSERT_TRUE(wait_until([&]() {
+        const auto m = output.meterLevels();
+        return m.left > 0.1 && m.right > 0.1;
+    }));
+
+    // Full left balance isolates left channel
+    output.setBalance(-1.0);
+    ASSERT_TRUE(wait_until([&]() {
+        const auto m = output.meterLevels();
+        return m.left > 0.1 && m.right == 0.0;
+    }));
+
+    // Full right balance isolates right channel
+    output.setBalance(1.0);
+    ASSERT_TRUE(wait_until([&]() {
+        const auto m = output.meterLevels();
+        return m.left == 0.0 && m.right > 0.1;
+    }));
+
+    // Zero volume silences both channels
+    output.setBalance(0.0);
+    output.setVolume(0.0);
+    ASSERT_TRUE(wait_until([&]() {
+        const auto m = output.meterLevels();
+        return m.left == 0.0 && m.right == 0.0;
+    }));
+
+    // Restore volume, then pause -> meter levels must immediately be 0
+    output.setVolume(0.8);
+    ASSERT_TRUE(wait_until([&]() {
+        const auto m = output.meterLevels();
+        return m.left > 0.1 && m.right > 0.1;
+    }));
+    output.pause();
+    EXPECT_DOUBLE_EQ(output.meterLevels().left, 0.0);
+    EXPECT_DOUBLE_EQ(output.meterLevels().right, 0.0);
+
+    output.stop();
+    EXPECT_DOUBLE_EQ(output.meterLevels().left, 0.0);
+    EXPECT_DOUBLE_EQ(output.meterLevels().right, 0.0);
+    output.close();
+}
+
 } // namespace
 } // namespace mycds

@@ -51,6 +51,10 @@ struct AudioOutput::Impl {
     std::atomic<bool> paused{true};
     std::atomic<bool> endOfStream{false};
     std::atomic<bool> streamError{false};
+    std::atomic<float> volume{0.8f};
+    std::atomic<float> balance{0.0f};
+    std::atomic<float> instantLeftLevel{0.0f};
+    std::atomic<float> instantRightLevel{0.0f};
     std::string activeDriver{};
     std::string activeDevice{};
     std::string errorMessage{};
@@ -65,20 +69,65 @@ struct AudioOutput::Impl {
         }
         auto* self = static_cast<Impl*>(userdata);
         if (self->paused.load(std::memory_order_acquire)) {
+            self->instantLeftLevel.store(0.0f, std::memory_order_relaxed);
+            self->instantRightLevel.store(0.0f, std::memory_order_relaxed);
             return;
         }
+
+        const float vol = std::clamp(self->volume.load(std::memory_order_relaxed), 0.0f, 1.0f);
+        const float bal = std::clamp(self->balance.load(std::memory_order_relaxed), -1.0f, 1.0f);
+        const float gain_l = vol * (bal > 0.0f ? (1.0f - bal) : 1.0f);
+        const float gain_r = vol * (bal < 0.0f ? (1.0f + bal) : 1.0f);
 
         std::array<std::byte, 4096> chunk{};
         std::size_t remaining = static_cast<std::size_t>(additional_amount);
         bool recorded_underrun_this_callback = false;
+        double sum_sq_l = 0.0;
+        double sum_sq_r = 0.0;
+        float max_abs_l = 0.0f;
+        float max_abs_r = 0.0f;
+        std::size_t frame_count = 0;
 
         while (remaining >= AudioFormat::kBytesPerSampleFrame) {
             const std::size_t req = std::min(remaining, chunk.size());
             const std::size_t got =
                 self->ringBuffer.read(std::span<std::byte>(chunk.data(), req));
             if (got > 0) {
+                for (std::size_t i = 0; i + 3 < got; i += AudioFormat::kBytesPerSampleFrame) {
+                    const auto raw_l = static_cast<std::int16_t>(
+                        static_cast<std::uint16_t>(chunk[i + 0]) |
+                        (static_cast<std::uint16_t>(chunk[i + 1]) << 8U));
+                    const auto raw_r = static_cast<std::int16_t>(
+                        static_cast<std::uint16_t>(chunk[i + 2]) |
+                        (static_cast<std::uint16_t>(chunk[i + 3]) << 8U));
+
+                    const long scaled_l_long = std::lrint(static_cast<float>(raw_l) * gain_l);
+                    const long scaled_r_long = std::lrint(static_cast<float>(raw_r) * gain_r);
+                    const auto scaled_l = static_cast<std::int16_t>(
+                        std::clamp(scaled_l_long, -32768L, 32767L));
+                    const auto scaled_r = static_cast<std::int16_t>(
+                        std::clamp(scaled_r_long, -32768L, 32767L));
+
+                    const auto ul = static_cast<std::uint16_t>(scaled_l);
+                    const auto ur = static_cast<std::uint16_t>(scaled_r);
+                    chunk[i + 0] = static_cast<std::byte>(ul & 0xFFU);
+                    chunk[i + 1] = static_cast<std::byte>((ul >> 8U) & 0xFFU);
+                    chunk[i + 2] = static_cast<std::byte>(ur & 0xFFU);
+                    chunk[i + 3] = static_cast<std::byte>((ur >> 8U) & 0xFFU);
+
+                    const float fl = static_cast<float>(scaled_l) / 32768.0f;
+                    const float fr = static_cast<float>(scaled_r) / 32768.0f;
+                    sum_sq_l += static_cast<double>(fl) * static_cast<double>(fl);
+                    sum_sq_r += static_cast<double>(fr) * static_cast<double>(fr);
+                    max_abs_l = std::max(max_abs_l, std::abs(fl));
+                    max_abs_r = std::max(max_abs_r, std::abs(fr));
+                    ++frame_count;
+                }
+
                 if (!SDL_PutAudioStreamData(sdl_stream, chunk.data(), static_cast<int>(got))) {
                     self->streamError.store(true, std::memory_order_relaxed);
+                    self->instantLeftLevel.store(0.0f, std::memory_order_relaxed);
+                    self->instantRightLevel.store(0.0f, std::memory_order_relaxed);
                     return;
                 }
                 remaining -= got;
@@ -99,6 +148,8 @@ struct AudioOutput::Impl {
                             chunk.data(),
                             static_cast<int>(silence_bytes))) {
                         self->streamError.store(true, std::memory_order_relaxed);
+                        self->instantLeftLevel.store(0.0f, std::memory_order_relaxed);
+                        self->instantRightLevel.store(0.0f, std::memory_order_relaxed);
                         return;
                     }
                     remaining -= silence_bytes;
@@ -108,6 +159,30 @@ struct AudioOutput::Impl {
                 }
             }
         }
+
+        if (frame_count > 0) {
+            auto to_meter_level = [](double sum_sq, std::size_t count, float peak) noexcept -> float {
+                const float rms = static_cast<float>(std::sqrt(sum_sq / static_cast<double>(count)));
+                const float blended = 0.5f * rms + 0.5f * peak;
+                if (blended <= 1e-5f) {
+                    return 0.0f;
+                }
+                const float db = 20.0f * std::log10(blended);
+                if (db <= -36.0f) {
+                    return 0.0f;
+                }
+                return std::clamp((db + 36.0f) / 36.0f, 0.0f, 1.0f);
+            };
+            self->instantLeftLevel.store(
+                to_meter_level(sum_sq_l, frame_count, max_abs_l),
+                std::memory_order_relaxed);
+            self->instantRightLevel.store(
+                to_meter_level(sum_sq_r, frame_count, max_abs_r),
+                std::memory_order_relaxed);
+        } else {
+            self->instantLeftLevel.store(0.0f, std::memory_order_relaxed);
+            self->instantRightLevel.store(0.0f, std::memory_order_relaxed);
+        }
     }
 
     ~Impl() {
@@ -116,6 +191,8 @@ struct AudioOutput::Impl {
 
     void close() noexcept {
         paused.store(true, std::memory_order_release);
+        instantLeftLevel.store(0.0f, std::memory_order_relaxed);
+        instantRightLevel.store(0.0f, std::memory_order_relaxed);
         if (stream) {
             SDL_PauseAudioStreamDevice(stream);
             SDL_DestroyAudioStream(stream);
@@ -227,6 +304,8 @@ void AudioOutput::pause() {
         return;
     }
     impl_->paused.store(true, std::memory_order_release);
+    impl_->instantLeftLevel.store(0.0f, std::memory_order_relaxed);
+    impl_->instantRightLevel.store(0.0f, std::memory_order_relaxed);
     if (!SDL_PauseAudioStreamDevice(impl_->stream)) {
         impl_->errorMessage =
             std::string("SDL_PauseAudioStreamDevice failed: ") + SDL_GetError();
@@ -239,6 +318,8 @@ void AudioOutput::stop() {
         return;
     }
     impl_->paused.store(true, std::memory_order_release);
+    impl_->instantLeftLevel.store(0.0f, std::memory_order_relaxed);
+    impl_->instantRightLevel.store(0.0f, std::memory_order_relaxed);
     SDL_PauseAudioStreamDevice(impl_->stream);
     SDL_LockAudioStream(impl_->stream);
     SDL_ClearAudioStream(impl_->stream);
@@ -313,6 +394,38 @@ std::uint64_t AudioOutput::totalBytesConsumed() const noexcept {
 
 std::uint64_t AudioOutput::underrunCount() const noexcept {
     return impl_ ? impl_->ringBuffer.underrunCount() : 0ULL;
+}
+
+void AudioOutput::setVolume(double volume) noexcept {
+    if (impl_) {
+        const float clamped = static_cast<float>(std::clamp(volume, 0.0, 1.0));
+        impl_->volume.store(clamped, std::memory_order_relaxed);
+    }
+}
+
+double AudioOutput::volume() const noexcept {
+    return impl_ ? static_cast<double>(impl_->volume.load(std::memory_order_relaxed)) : 0.8;
+}
+
+void AudioOutput::setBalance(double balance) noexcept {
+    if (impl_) {
+        const float clamped = static_cast<float>(std::clamp(balance, -1.0, 1.0));
+        impl_->balance.store(clamped, std::memory_order_relaxed);
+    }
+}
+
+double AudioOutput::balance() const noexcept {
+    return impl_ ? static_cast<double>(impl_->balance.load(std::memory_order_relaxed)) : 0.0;
+}
+
+AudioMeterLevels AudioOutput::meterLevels() const noexcept {
+    if (!impl_ || !isOpen() || isPaused()) {
+        return AudioMeterLevels{};
+    }
+    return AudioMeterLevels{
+        .left = static_cast<double>(impl_->instantLeftLevel.load(std::memory_order_relaxed)),
+        .right = static_cast<double>(impl_->instantRightLevel.load(std::memory_order_relaxed)),
+    };
 }
 
 std::string AudioOutput::driverName() const {
