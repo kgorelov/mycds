@@ -102,6 +102,7 @@ public:
 
     void seek_forward(double seconds);
     void seek_backward(double seconds);
+    void seek_to_track_fraction(double fraction);
 
     void start_recording();
     void stop_recording();

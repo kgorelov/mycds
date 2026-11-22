@@ -820,6 +820,56 @@ void CdDisplayModel::seek_backward(double seconds) {
     }
 }
 
+void CdDisplayModel::seek_to_track_fraction(double fraction) {
+    if (recording_ || tracks_.empty()) {
+        return;
+    }
+    const double clamped = std::clamp(fraction, 0.0, 1.0);
+
+    if (has_real_source_ && controller_ && !disc_layout_.tracks.empty()) {
+        pending_seek_active_ = false;
+        pending_seek_timer_ = 0.0;
+        pending_seek_idle_frames_ = 0;
+
+        const int trk_num = current_track_number();
+        const mycds::TrackInfo* target_trk = mycds::find_track_by_number(disc_layout_.tracks, trk_num);
+        if (!target_trk || target_trk->type != mycds::TrackType::Audio) {
+            return;
+        }
+
+        const std::int64_t track_sectors = target_trk->endLba - target_trk->index01Lba;
+        if (track_sectors <= 0) {
+            return;
+        }
+
+        const std::int64_t offset_sectors = std::clamp(
+            static_cast<std::int64_t>(std::llround(clamped * static_cast<double>(track_sectors))),
+            std::int64_t{0},
+            track_sectors - 1);
+        const std::int64_t target_lba = target_trk->index01Lba + offset_sectors;
+
+        try {
+            controller_->seekToLba(target_lba);
+            track_elapsed_seconds_ =
+                static_cast<double>(offset_sectors) / mycds::AudioFormat::kSectorsPerSecond;
+            playback_error_.clear();
+        } catch (const std::exception& ex) {
+            playback_error_ = ex.what();
+        }
+        return;
+    }
+
+    const int dur = track_duration_seconds();
+    if (dur <= 0) {
+        track_elapsed_seconds_ = 0.0;
+        return;
+    }
+    track_elapsed_seconds_ = std::clamp(
+        clamped * static_cast<double>(dur),
+        0.0,
+        std::max(0.0, static_cast<double>(dur) - 0.1));
+}
+
 void CdDisplayModel::start_recording() {
     if (recording_ || tracks_.empty()) {
         return;

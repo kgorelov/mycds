@@ -581,7 +581,7 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
 
     // Indicators Row Underneath
     // Indicators: "repeat (track/disk)", "shuffle", "cloud", "CDDB"
-    const float indicator_y = digits_start_y + seg_digit_h + 16.0f;
+    const float indicator_y = digits_start_y + seg_digit_h + 12.0f;
     const float ind_tile_h = 34.0f;
     const float ind_tile_w = (glass_w - 50.0f) / 4.0f;
 
@@ -741,6 +741,93 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
         if (ImGui::IsItemHovered()) {
             draw_list->AddRect(tile_pos, ImVec2(tile_pos.x + ind_tile_w, tile_pos.y + ind_tile_h),
                                IM_COL32(120, 255, 150, 120), 4.0f);
+        }
+    }
+
+    // Clickable Segmented Track Progress Bar at the bottom of the smoked glass display
+    {
+        constexpr int kProgressSegments = 56;
+        constexpr float kSegGap = 3.0f;
+        constexpr float kSegHeight = 8.0f;
+        constexpr float kHitPadY = 4.0f;
+
+        const float bar_x = glass_min.x + 10.0f;
+        const float bar_w = glass_w - 20.0f;
+        const float bar_y = indicator_y + ind_tile_h + 10.0f;
+        const float seg_w = (bar_w - static_cast<float>(kProgressSegments - 1) * kSegGap) /
+                            static_cast<float>(kProgressSegments);
+
+        const ImVec2 hit_pos(bar_x, bar_y - kHitPadY);
+        const ImVec2 hit_size(bar_w, kSegHeight + 2.0f * kHitPadY);
+        ImGui::SetCursorScreenPos(hit_pos);
+        ImGui::InvisibleButton("TrackProgressBar", hit_size);
+
+        const bool bar_hovered = has_disc && !is_rec && ImGui::IsItemHovered();
+        const bool bar_clicked = has_disc && !is_rec && ImGui::IsItemClicked(ImGuiMouseButton_Left);
+
+        double hover_frac = 0.0;
+        if (bar_hovered || bar_clicked) {
+            const float mouse_x = ImGui::GetIO().MousePos.x;
+            hover_frac = std::clamp(
+                static_cast<double>(mouse_x - bar_x) / static_cast<double>(bar_w),
+                0.0,
+                1.0);
+        }
+
+        if (bar_clicked) {
+            model.seek_to_track_fraction(hover_frac);
+        }
+
+        const int dur_sec = model.track_duration_seconds();
+        const double progress = (has_disc && dur_sec > 0)
+            ? std::clamp(model.track_elapsed_seconds() / static_cast<double>(dur_sec), 0.0, 1.0)
+            : 0.0;
+        const int lit_segments = has_disc
+            ? std::clamp(static_cast<int>(std::round(progress * kProgressSegments)), 0, kProgressSegments)
+            : 0;
+        const int hover_seg = bar_hovered
+            ? std::clamp(static_cast<int>(std::floor(hover_frac * kProgressSegments)), 0, kProgressSegments - 1)
+            : -1;
+
+        const ImU32 seg_lit_core = is_rec ? kRedLitCore : kAmberLitCore;
+        const ImU32 seg_lit_glow = is_rec ? kRedLitGlow : kAmberLitGlow;
+        const ImU32 seg_unlit = is_rec ? kRedUnlit : kAmberUnlit;
+
+        for (int i = 0; i < kProgressSegments; ++i) {
+            const float sx = bar_x + static_cast<float>(i) * (seg_w + kSegGap);
+            const ImVec2 s_min(sx, bar_y);
+            const ImVec2 s_max(sx + seg_w, bar_y + kSegHeight);
+            const bool is_lit = (i < lit_segments);
+            const bool is_hover_marker = (i == hover_seg);
+
+            if (is_lit) {
+                draw_list->AddRect(
+                    ImVec2(s_min.x - 1.0f, s_min.y - 1.0f),
+                    ImVec2(s_max.x + 1.0f, s_max.y + 1.0f),
+                    seg_lit_glow, 1.0f, 0, 2.0f);
+                draw_list->AddRectFilled(s_min, s_max, seg_lit_core, 1.0f);
+            } else if (is_hover_marker) {
+                draw_list->AddRectFilled(s_min, s_max, IM_COL32(180, 115, 20, 220), 1.0f);
+            } else {
+                draw_list->AddRectFilled(s_min, s_max, seg_unlit, 1.0f);
+            }
+
+            if (is_hover_marker) {
+                draw_list->AddRect(
+                    ImVec2(s_min.x - 1.0f, s_min.y - 1.0f),
+                    ImVec2(s_max.x + 1.0f, s_max.y + 1.0f),
+                    IM_COL32(255, 220, 120, 230), 1.0f, 0, 1.2f);
+            }
+        }
+
+        if (bar_hovered && dur_sec > 0) {
+            const int target_sec = std::clamp(
+                static_cast<int>(std::llround(hover_frac * static_cast<double>(dur_sec))),
+                0,
+                dur_sec);
+            ImGui::SetTooltip("Seek to %02d:%02d / %02d:%02d",
+                              target_sec / 60, target_sec % 60,
+                              dur_sec / 60, dur_sec % 60);
         }
     }
 

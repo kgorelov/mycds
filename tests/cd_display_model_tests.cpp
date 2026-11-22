@@ -267,6 +267,14 @@ TEST(CdDisplayModelTests, SeekingBehavior) {
     model.seek_backward(5.0);
     EXPECT_EQ(model.current_track_number(), 1);
     EXPECT_NEAR(model.track_elapsed_seconds(), static_cast<double>(dur) - 5.0, 0.001);
+
+    // Seek by track fraction (0.0 .. 1.0)
+    model.seek_to_track_fraction(0.5);
+    EXPECT_NEAR(model.track_elapsed_seconds(), static_cast<double>(dur) * 0.5, 0.001);
+    model.seek_to_track_fraction(-0.2);
+    EXPECT_DOUBLE_EQ(model.track_elapsed_seconds(), 0.0);
+    model.seek_to_track_fraction(1.5);
+    EXPECT_NEAR(model.track_elapsed_seconds(), static_cast<double>(dur) - 0.1, 0.001);
 }
 
 TEST(CdDisplayModelTests, VolumeAndBalanceAdjustment) {
@@ -558,6 +566,12 @@ TEST(CdDisplayModelTests, RealPlaybackControllerIntegrationWithCueImage) {
     model.jump_to_track(2);
     model.update(0.02);
     EXPECT_EQ(model.current_track_number(), 2);
+
+    // Seek to 50% of track 2 via fraction
+    model.seek_to_track_fraction(0.5);
+    model.update(0.02);
+    EXPECT_EQ(model.current_track_number(), 2);
+    EXPECT_GE(model.track_elapsed_seconds(), 0.45);
 
     // Pause zeroes meter levels immediately
     model.pause();
