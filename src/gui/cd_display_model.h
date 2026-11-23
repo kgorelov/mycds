@@ -12,6 +12,10 @@
 #include "domain/disc_info.hpp"
 #include "playback/playback_controller.hpp"
 
+namespace mycds {
+class CddbHttpTransport;
+}
+
 namespace mycds::gui {
 
 enum class RepeatMode {
@@ -23,6 +27,13 @@ enum class RepeatMode {
 enum class ConnectivityStatus {
     Connected,
     Disconnected
+};
+
+enum class CddbStatus {
+    Inactive,
+    Querying,
+    Succeeded,
+    Failed
 };
 
 enum class EjectMenuScreen {
@@ -182,6 +193,9 @@ public:
     [[nodiscard]] double uptime_seconds() const;
     [[nodiscard]] bool is_cloud_active() const;
     [[nodiscard]] bool is_cddb_active() const;
+    [[nodiscard]] CddbStatus cddb_status() const;
+    void retry_cddb_lookup();
+    void set_cddb_transport(std::shared_ptr<mycds::CddbHttpTransport> transport);
 
     [[nodiscard]] VolumeLevels volume_levels() const;
     [[nodiscard]] double left_level() const;
@@ -226,6 +240,8 @@ private:
 
     // Asynchronous CDDB lookup state
     struct AsyncCddbResult;
+    CddbStatus cddb_status_{CddbStatus::Inactive};
+    std::shared_ptr<mycds::CddbHttpTransport> cddb_transport_{};
     std::mutex cddb_mutex_{};
     std::thread cddb_thread_{};
     std::atomic<std::uint64_t> cddb_generation_{0};

@@ -101,6 +101,7 @@ bool CdDisplayModel::open_disc_source(
     std::unique_ptr<mycds::DiscSource> source,
     std::string* out_error) {
     cancel_async_cddb_lookup();
+    cddb_status_ = CddbStatus::Inactive;
     pending_seek_active_ = false;
     pending_seek_was_playing_ = false;
     pending_seek_idle_frames_ = 0;
@@ -172,8 +173,9 @@ bool CdDisplayModel::open_disc_source(
     eject_menu_open_ = false;
     reset_volume_levels();
 
-    if (disc_layout_.discMetadata.title.empty() &&
-        connectivity_ == ConnectivityStatus::Connected) {
+    cddb_status_ = CddbStatus::Inactive;
+    if (disc_layout_.discMetadata.title.empty()) {
+        connectivity_ = ConnectivityStatus::Connected;
         start_async_cddb_lookup();
     }
 
@@ -382,8 +384,9 @@ void CdDisplayModel::poll_async_open() {
         : 0.0;
     reset_volume_levels();
 
-    if (disc_layout_.discMetadata.title.empty() &&
-        connectivity_ == ConnectivityStatus::Connected) {
+    cddb_status_ = CddbStatus::Inactive;
+    if (disc_layout_.discMetadata.title.empty()) {
+        connectivity_ = ConnectivityStatus::Connected;
         start_async_cddb_lookup();
     }
 }
@@ -418,6 +421,8 @@ void CdDisplayModel::clear_disc() noexcept {
     artist_name_.clear();
     album_title_.clear();
     has_cddb_data_ = false;
+    cddb_status_ = CddbStatus::Inactive;
+    connectivity_ = ConnectivityStatus::Connected;
     playing_ = false;
     recording_ = false;
     current_track_index_ = 0;
@@ -484,6 +489,9 @@ void CdDisplayModel::cancel_async_cddb_lookup() noexcept {
     }
     std::lock_guard<std::mutex> lock(cddb_mutex_);
     cddb_result_.reset();
+    if (cddb_status_ == CddbStatus::Querying) {
+        cddb_status_ = CddbStatus::Inactive;
+    }
 }
 
 void CdDisplayModel::start_async_cddb_lookup() {
@@ -492,9 +500,11 @@ void CdDisplayModel::start_async_cddb_lookup() {
         return;
     }
 
+    cddb_status_ = CddbStatus::Querying;
     const std::uint64_t gen = cddb_generation_.load(std::memory_order_acquire);
     const mycds::DiscInfo disc_info = disc_layout_.discInfo;
     const std::vector<mycds::TrackInfo> layout_tracks = disc_layout_.tracks;
+    auto transport = cddb_transport_;
 
     {
         std::lock_guard<std::mutex> lock(cddb_mutex_);
@@ -502,7 +512,7 @@ void CdDisplayModel::start_async_cddb_lookup() {
         cddb_result_->generation = gen;
     }
 
-    cddb_thread_ = std::thread([this, gen, disc_info, layout_tracks]() {
+    cddb_thread_ = std::thread([this, gen, disc_info, layout_tracks, transport]() {
         bool found = false;
         bool net_err = false;
         mycds::MetadataRecord resolved{};
@@ -511,7 +521,7 @@ void CdDisplayModel::start_async_cddb_lookup() {
             mycds::CddbClientConfig cfg;
             cfg.connectTimeoutMs = 4000;
             cfg.requestTimeoutMs = 6000;
-            mycds::CddbCompatibleProvider provider(cfg);
+            mycds::CddbCompatibleProvider provider(cfg, transport);
 
             const auto candidates = provider.search(disc_info, layout_tracks);
             if (!candidates.empty()) {
@@ -567,10 +577,12 @@ void CdDisplayModel::poll_async_cddb_lookup() {
 
     if (completed->network_error) {
         connectivity_ = ConnectivityStatus::Disconnected;
+        cddb_status_ = CddbStatus::Failed;
         return;
     }
 
     connectivity_ = ConnectivityStatus::Connected;
+    cddb_status_ = CddbStatus::Succeeded;
     if (completed->found) {
         mycds::MetadataMatcher::applyToLayout(disc_layout_, completed->record);
         apply_layout_metadata();
@@ -1520,7 +1532,26 @@ bool CdDisplayModel::is_cloud_active() const {
 }
 
 bool CdDisplayModel::is_cddb_active() const {
-    return uptime_seconds_ >= 3.0;
+    return cddb_status_ != CddbStatus::Inactive;
+}
+
+CddbStatus CdDisplayModel::cddb_status() const {
+    return cddb_status_;
+}
+
+void CdDisplayModel::retry_cddb_lookup() {
+    if (!has_real_source_ || disc_layout_.tracks.empty()) {
+        return;
+    }
+    if (cddb_status_ == CddbStatus::Querying) {
+        return;
+    }
+    connectivity_ = ConnectivityStatus::Connected;
+    start_async_cddb_lookup();
+}
+
+void CdDisplayModel::set_cddb_transport(std::shared_ptr<mycds::CddbHttpTransport> transport) {
+    cddb_transport_ = std::move(transport);
 }
 
 VolumeLevels CdDisplayModel::volume_levels() const {
@@ -1625,6 +1656,7 @@ void CdDisplayModel::load_disc(const std::string& artist_name, const std::string
     artist_name_ = artist_name;
     album_title_ = album_title;
     tracks_ = tracks;
+    cddb_status_ = CddbStatus::Inactive;
     recording_ = false;
     current_track_index_ = 0;
     track_elapsed_seconds_ = 0.0;
@@ -1650,7 +1682,7 @@ void CdDisplayModel::set_album_title(const std::string& title) {
 
 bool CdDisplayModel::has_cddb_data() const {
     const bool is_connected = (connectivity_ == ConnectivityStatus::Connected);
-    return has_cddb_data_ && is_cddb_active() && is_connected && !artist_name_.empty() && !album_title_.empty();
+    return has_cddb_data_ && is_connected && !artist_name_.empty() && !album_title_.empty();
 }
 
 void CdDisplayModel::set_has_cddb_data(bool has_data) {

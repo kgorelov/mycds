@@ -7,6 +7,7 @@
 
 #include "audio/audio_output.hpp"
 #include "gui/cd_display_model.h"
+#include "metadata/cddb_provider.hpp"
 #include "metadata/metadata_store.hpp"
 #include "source/image_source.hpp"
 
@@ -25,21 +26,23 @@ TEST(CdDisplayModelTests, InitialState) {
     EXPECT_EQ(model.repeat_mode(), RepeatMode::Off);
     EXPECT_EQ(model.connectivity_status(), ConnectivityStatus::Connected);
 
-    // Initial uptime < 3.0s means cloud and cddb indicators are disabled
+    // Initial state: cloud and cddb indicators are disabled (not timer-based)
     EXPECT_FALSE(model.is_cloud_active());
     EXPECT_FALSE(model.is_cddb_active());
+    EXPECT_EQ(model.cddb_status(), CddbStatus::Inactive);
 }
 
-TEST(CdDisplayModelTests, CloudAndCddbTimerAtThreeSeconds) {
+TEST(CdDisplayModelTests, CloudAndCddbStayInactiveWithoutRealRequest) {
     CdDisplayModel model;
 
     model.update(2.5);
     EXPECT_FALSE(model.is_cloud_active());
     EXPECT_FALSE(model.is_cddb_active());
 
-    model.update(0.5); // total uptime = 3.0s
+    model.update(1.0); // total uptime = 3.5s
     EXPECT_FALSE(model.is_cloud_active());
-    EXPECT_TRUE(model.is_cddb_active());
+    EXPECT_FALSE(model.is_cddb_active());
+    EXPECT_EQ(model.cddb_status(), CddbStatus::Inactive);
 }
 
 TEST(CdDisplayModelTests, TimeTickingWhenPlayingAndPaused) {
@@ -429,13 +432,7 @@ TEST(CdDisplayModelTests, ArtistAndAlbumCddbData) {
     EXPECT_EQ(model.artist_name(), "Pink Floyd");
     EXPECT_EQ(model.album_title(), "The Dark Side of the Moon");
 
-    // Before 3.0s uptime, CDDB data is inactive
-    EXPECT_FALSE(model.has_cddb_data());
-    EXPECT_EQ(model.track_display_title(0), "Track 1");
-    EXPECT_EQ(model.track_display_title(1), "Track 2");
-
-    // After 3.0s uptime with connectivity, CDDB data becomes active
-    model.update(3.0);
+    // With connectivity and metadata present, CDDB data is active
     EXPECT_TRUE(model.has_cddb_data());
     EXPECT_EQ(model.track_display_title(0), "Speak to Me / Breathe");
     EXPECT_EQ(model.track_display_title(1), "On the Run");
@@ -717,5 +714,115 @@ TEST(CdDisplayModelTests, AsyncOpenLoadsCueImageWithoutBlockingCaller) {
     EXPECT_GE(model.track_elapsed_seconds(), 0.15);
 
     model.eject_disc();
+    fs::remove_all(temp_dir, ec);
+}
+
+namespace {
+
+class MockGuiCddbTransport final : public mycds::CddbHttpTransport {
+public:
+    std::atomic<bool> should_fail{true};
+    std::atomic<int> call_count{0};
+    std::atomic<int> delay_ms{25};
+
+    std::string performGet(const std::string& url, long, long) override {
+        ++call_count;
+        if (delay_ms.load() > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms.load()));
+        }
+        if (should_fail.load()) {
+            throw std::runtime_error("Simulated CDDB network failure");
+        }
+        if (url.find("cddb+query") != std::string::npos) {
+            return "200 rock 0f000402 Test Artist / Test Album\r\n";
+        }
+        if (url.find("cddb+read") != std::string::npos) {
+            return "210 rock 0f000402 CD database entry follows (until terminating `.')\r\n"
+                   "DISCID=0f000402\r\n"
+                   "DTITLE=Test Artist / Test Album\r\n"
+                   "DYEAR=2001\r\n"
+                   "DGENRE=Rock\r\n"
+                   "TTITLE0=First Song\r\n"
+                   "TTITLE1=Second Song\r\n"
+                   ".\r\n";
+        }
+        throw std::runtime_error("Unexpected CDDB URL: " + url);
+    }
+};
+
+} // namespace
+
+TEST(CdDisplayModelTests, CddbStatusLifecycleAndRetry) {
+    namespace fs = std::filesystem;
+    const fs::path temp_dir = fs::temp_directory_path() / "mycds_cddb_status_test";
+    std::error_code ec;
+    fs::remove_all(temp_dir, ec);
+    fs::create_directories(temp_dir, ec);
+
+    const fs::path bin_path = temp_dir / "disc.bin";
+    const fs::path cue_path = temp_dir / "disc.cue";
+    {
+        std::ofstream bin(bin_path, std::ios::binary);
+        std::vector<char> zeros(2352 * 150, 0);
+        bin.write(zeros.data(), static_cast<std::streamsize>(zeros.size()));
+    }
+    {
+        std::ofstream cue(cue_path);
+        cue << "FILE \"disc.bin\" BINARY\n"
+            << "  TRACK 01 AUDIO\n"
+            << "    INDEX 01 00:00:00\n"
+            << "  TRACK 02 AUDIO\n"
+            << "    INDEX 01 00:01:00\n";
+    }
+
+    mycds::PlaybackControllerConfig cfg;
+    cfg.audioConfig.ringBufferSectors = 60;
+    cfg.audioConfig.preferredDriver = "dummy";
+    cfg.readChunkSectors = 8;
+    cfg.prebufferSectors = 8;
+
+    auto transport = std::make_shared<MockGuiCddbTransport>();
+    transport->should_fail.store(true);
+
+    CdDisplayModel model(cfg);
+    model.set_cddb_transport(transport);
+    model.clear_disc();
+    EXPECT_EQ(model.cddb_status(), CddbStatus::Inactive);
+
+    std::string err;
+    ASSERT_TRUE(model.open_disc_source(mycds::open_image_source(cue_path.string()), &err)) << err;
+    EXPECT_EQ(model.cddb_status(), CddbStatus::Querying);
+    EXPECT_TRUE(model.is_cddb_active());
+
+    for (int i = 0; i < 100 && model.cddb_status() == CddbStatus::Querying; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        model.update(0.01);
+    }
+    EXPECT_EQ(model.cddb_status(), CddbStatus::Failed);
+    EXPECT_EQ(model.connectivity_status(), ConnectivityStatus::Disconnected);
+    EXPECT_GE(transport->call_count.load(), 1);
+
+    // Clicking red indicator triggers retry and transitions to Succeeded when network recovers
+    transport->should_fail.store(false);
+    const int calls_before_retry = transport->call_count.load();
+    model.retry_cddb_lookup();
+    EXPECT_EQ(model.cddb_status(), CddbStatus::Querying);
+
+    for (int i = 0; i < 100 && model.cddb_status() == CddbStatus::Querying; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        model.update(0.01);
+    }
+    EXPECT_EQ(model.cddb_status(), CddbStatus::Succeeded);
+    EXPECT_EQ(model.connectivity_status(), ConnectivityStatus::Connected);
+    EXPECT_GT(transport->call_count.load(), calls_before_retry);
+    EXPECT_EQ(model.artist_name(), "Test Artist");
+    EXPECT_EQ(model.album_title(), "Test Album");
+    EXPECT_EQ(model.track_display_title(0), "First Song");
+    EXPECT_EQ(model.track_display_title(1), "Second Song");
+
+    model.eject_disc();
+    EXPECT_EQ(model.cddb_status(), CddbStatus::Inactive);
+    EXPECT_FALSE(model.is_cddb_active());
+
     fs::remove_all(temp_dir, ec);
 }

@@ -586,7 +586,6 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
     const float ind_tile_w = (glass_w - 50.0f) / 4.0f;
 
     const bool cloud_active = model.is_cloud_active();
-    const bool cddb_active = model.is_cddb_active();
     const bool is_connected = (model.connectivity_status() == ConnectivityStatus::Connected);
 
     // Indicator 1: REPEAT (track / disk)
@@ -704,27 +703,44 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
     // Indicator 4: CDDB
     {
         const ImVec2 tile_pos(glass_min.x + 10.0f + 3 * (ind_tile_w + 10.0f), indicator_y);
+        const CddbStatus cddb_status = model.cddb_status();
         ImU32 col_core = kGreenUnlit;
         ImU32 col_glow = 0;
+        ImU32 border_col = IM_COL32(18, 30, 20, 180);
         bool is_lit = false;
         const float text_y = tile_pos.y + (ind_tile_h - ImGui::GetTextLineHeight()) * 0.5f;
 
-        if (cddb_active) {
-            is_lit = true;
-            if (is_connected) {
+        switch (cddb_status) {
+            case CddbStatus::Inactive:
+                break;
+            case CddbStatus::Querying: {
+                const bool blink_on = (std::fmod(model.uptime_seconds(), 0.25) < 0.125);
+                if (blink_on) {
+                    is_lit = true;
+                    col_core = kGreenLitCore;
+                    col_glow = kGreenLitGlow;
+                    border_col = IM_COL32(30, 90, 45, 180);
+                }
+                break;
+            }
+            case CddbStatus::Succeeded:
+                is_lit = true;
                 col_core = kGreenLitCore;
                 col_glow = kGreenLitGlow;
-            } else {
+                border_col = IM_COL32(30, 90, 45, 180);
+                break;
+            case CddbStatus::Failed:
+                is_lit = true;
                 col_core = kRedLitCore;
                 col_glow = kRedLitGlow;
-            }
+                border_col = IM_COL32(110, 30, 25, 180);
+                break;
         }
 
         draw_list->AddRectFilled(tile_pos, ImVec2(tile_pos.x + ind_tile_w, tile_pos.y + ind_tile_h),
                                  IM_COL32(8, 16, 10, 200), 4.0f);
         draw_list->AddRect(tile_pos, ImVec2(tile_pos.x + ind_tile_w, tile_pos.y + ind_tile_h),
-                           is_lit ? (is_connected ? IM_COL32(30, 90, 45, 180) : IM_COL32(110, 30, 25, 180))
-                                  : IM_COL32(18, 30, 20, 180), 4.0f);
+                           border_col, 4.0f);
 
         DrawCddbGraphic(draw_list, ImVec2(tile_pos.x + 22.0f, tile_pos.y + ind_tile_h * 0.5f),
                         20.0f, col_core, col_glow, is_lit);
@@ -736,11 +752,22 @@ void RenderCdDisplay(CdDisplayModel& model, const ImVec2& user_size) {
 
         ImGui::SetCursorScreenPos(tile_pos);
         if (ImGui::InvisibleButton("CddbIndicatorBtn", ImVec2(ind_tile_w, ind_tile_h))) {
-            model.toggle_connectivity();
+            if (cddb_status == CddbStatus::Failed) {
+                model.retry_cddb_lookup();
+            }
         }
         if (ImGui::IsItemHovered()) {
-            draw_list->AddRect(tile_pos, ImVec2(tile_pos.x + ind_tile_w, tile_pos.y + ind_tile_h),
-                               IM_COL32(120, 255, 150, 120), 4.0f);
+            if (cddb_status == CddbStatus::Failed) {
+                draw_list->AddRect(tile_pos, ImVec2(tile_pos.x + ind_tile_w, tile_pos.y + ind_tile_h),
+                                   IM_COL32(255, 120, 120, 140), 4.0f);
+                ImGui::SetTooltip("CDDB lookup failed — click to retry");
+            } else if (cddb_status == CddbStatus::Querying) {
+                ImGui::SetTooltip("Querying CDDB...");
+            } else if (cddb_status == CddbStatus::Succeeded) {
+                ImGui::SetTooltip("CDDB connected");
+            } else {
+                ImGui::SetTooltip("CDDB inactive");
+            }
         }
     }
 
