@@ -604,9 +604,9 @@ void DrawNavButtonIcon(ImDrawList* draw_list, const ImVec2& center, NavButtonIco
     }
 }
 
-bool RenderHardwareIconButton(const char* str_id, const ImVec2& pos, const ImVec2& size,
-                              NavButtonIcon icon, const char* tooltip,
-                              bool is_active = false, bool enabled = true) {
+bool RenderHardwareNavButton(const char* str_id, const ImVec2& pos, const ImVec2& size,
+                             NavButtonIcon icon, const char* label, const char* tooltip,
+                             bool is_active = false, bool enabled = true) {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     ImGui::SetCursorScreenPos(pos);
@@ -623,24 +623,48 @@ bool RenderHardwareIconButton(const char* str_id, const ImVec2& pos, const ImVec
     const ImVec2 b_max(pos.x + size.x + offset.x, pos.y + size.y + offset.y);
     DrawButtonBrushedFace(draw_list, b_min, b_max, hovered, pressed);
 
+    const bool has_label = (label != nullptr && label[0] != '\0');
     if (is_active) {
-        const ImVec2 bar_min(b_min.x + 4.0f, b_min.y + 7.0f);
-        const ImVec2 bar_max(b_min.x + 7.5f, b_max.y - 7.0f);
-        DrawDiffusedRect(draw_list, bar_min, bar_max, 1.2f, kColCyanGlowCore, true);
+        const ImVec2 bar_min(b_min.x + (has_label ? 6.0f : 4.0f),
+                             b_min.y + (has_label ? 8.0f : 7.0f));
+        const ImVec2 bar_max(b_min.x + (has_label ? 10.0f : 7.5f),
+                             b_max.y - (has_label ? 8.0f : 7.0f));
+        DrawDiffusedRect(draw_list, bar_min, bar_max, has_label ? 1.5f : 1.2f,
+                         kColCyanGlowCore, true);
     }
 
-    const ImU32 icon_col = !enabled
+    const ImU32 col = !enabled
         ? IM_COL32(90, 96, 106, 160)
         : ((is_active || pressed)
             ? kColCyanGlowCore
             : (hovered ? kColCyanBright : IM_COL32(110, 210, 235, 235)));
-    const ImVec2 center((b_min.x + b_max.x) * 0.5f, (b_min.y + b_max.y) * 0.5f);
-    DrawNavButtonIcon(draw_list, center, icon, icon_col, enabled && (is_active || hovered || pressed));
+    const bool is_bright = enabled && (is_active || hovered || pressed);
+    const float mid_y = (b_min.y + b_max.y) * 0.5f;
+
+    if (has_label) {
+        const ImVec2 icon_center(b_min.x + 28.0f, mid_y);
+        DrawNavButtonIcon(draw_list, icon_center, icon, col, is_bright);
+
+        constexpr float kBtnFontSize = 18.0f;
+        ImFont* font = ImGui::GetFont();
+        const ImVec2 text_size = font->CalcTextSizeA(kBtnFontSize, 10000.0f, 0.0f, label);
+        const ImVec2 text_pos(b_min.x + 48.0f, mid_y - text_size.y * 0.5f);
+        DrawHardwareButtonLabel(draw_list, label, text_pos, col, is_active, is_bright, kBtnFontSize);
+    } else {
+        const ImVec2 center((b_min.x + b_max.x) * 0.5f, mid_y);
+        DrawNavButtonIcon(draw_list, center, icon, col, is_bright);
+    }
 
     if (tooltip && ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s", tooltip);
     }
     return enabled && ImGui::IsItemClicked(ImGuiMouseButton_Left);
+}
+
+bool RenderHardwareIconButton(const char* str_id, const ImVec2& pos, const ImVec2& size,
+                              NavButtonIcon icon, const char* tooltip,
+                              bool is_active = false, bool enabled = true) {
+    return RenderHardwareNavButton(str_id, pos, size, icon, nullptr, tooltip, is_active, enabled);
 }
 
 void DrawBrowserEntryIcon(ImDrawList* draw_list, const ImVec2& center,
@@ -2068,14 +2092,14 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
 
     for (const auto& item : kNavItems) {
         const bool is_active = (model.active_eject_screen() == item.screen);
-        const bool clicked = compact_sidebar
-            ? RenderHardwareIconButton(item.id, ImVec2(sidebar_min.x + inner_pad_x, btn_y),
-                                       ImVec2(btn_width, kBtnHeight),
-                                       nav_icon_for_screen(item.screen), item.label, is_active)
-            : RenderHardwareTextButton(item.id, item.label,
-                                       ImVec2(sidebar_min.x + inner_pad_x, btn_y),
-                                       ImVec2(btn_width, kBtnHeight),
-                                       is_active);
+        const bool clicked = RenderHardwareNavButton(
+            item.id,
+            ImVec2(sidebar_min.x + inner_pad_x, btn_y),
+            ImVec2(btn_width, kBtnHeight),
+            nav_icon_for_screen(item.screen),
+            compact_sidebar ? nullptr : item.label,
+            compact_sidebar ? item.label : nullptr,
+            is_active);
         if (clicked) {
             switch_screen(item.screen);
         }
@@ -2096,19 +2120,15 @@ void RenderEjectMenu(CdDisplayModel& model, const ImVec2& size) {
         IM_COL32(75, 80, 90, 140), 1.0f
     );
 
-    const bool back_clicked = compact_sidebar
-        ? RenderHardwareIconButton("##NavBack", ImVec2(sidebar_min.x + inner_pad_x, back_y),
-                                   ImVec2(btn_width, kBtnHeight), NavButtonIcon::Back,
-                                   "Back (ESC)")
-        : RenderHardwareTextButton("##NavBack", "Back",
-                                   ImVec2(sidebar_min.x + inner_pad_x, back_y),
-                                   ImVec2(btn_width, kBtnHeight),
-                                   false);
+    const bool back_clicked = RenderHardwareNavButton(
+        "##NavBack",
+        ImVec2(sidebar_min.x + inner_pad_x, back_y),
+        ImVec2(btn_width, kBtnHeight),
+        NavButtonIcon::Back,
+        compact_sidebar ? nullptr : "Back",
+        compact_sidebar ? "Back (ESC)" : "Return to CD Player (ESC)");
     if (back_clicked) {
         model.close_eject_menu();
-    }
-    if (!compact_sidebar && ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Return to CD Player (ESC)");
     }
 
     // -------------------------------------------------------------------------

@@ -54,6 +54,12 @@ void DrawDiffusedRectOutline(ImDrawList* draw_list, const ImVec2& min_pos, const
 void DrawDiffusedLine(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2,
                       ImU32 core_col, float core_thickness, bool is_bright);
 
+/// Draws a cyan-backlit hardware button text label with recessed drop shadow,
+/// optional glow bloom, and bold double-pass stroke at the given position.
+void DrawHardwareButtonLabel(ImDrawList* draw_list, const char* label, const ImVec2& text_pos,
+                             ImU32 text_col, bool is_active, bool is_bright,
+                             float font_size = 18.0f);
+
 /// Renders a tactile brushed-metal hardware button with a centered cyan-backlit label
 /// and an optional active LED bar on the left edge. Returns true when clicked.
 bool RenderHardwareTextButton(const char* str_id, const char* label,

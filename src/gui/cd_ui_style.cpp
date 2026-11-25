@@ -160,6 +160,30 @@ void DrawDiffusedLine(ImDrawList* draw_list, const ImVec2& p1, const ImVec2& p2,
     draw_list->AddLine(p1, p2, core_col, core_thickness);
 }
 
+void DrawHardwareButtonLabel(ImDrawList* draw_list, const char* label, const ImVec2& text_pos,
+                             ImU32 text_col, bool is_active, bool is_bright,
+                             float font_size) {
+    if (!draw_list || !label) {
+        return;
+    }
+    ImFont* font = ImGui::GetFont();
+
+    // Subtle recessed drop shadow
+    draw_list->AddText(font, font_size, ImVec2(text_pos.x + 1.0f, text_pos.y + 1.2f),
+                       IM_COL32(8, 10, 14, 180), label);
+
+    // Soft cyan backlight bloom for active/hovered states
+    if (is_bright) {
+        const ImU32 bloom_col = is_active ? IM_COL32(0, 230, 255, 70) : IM_COL32(0, 220, 255, 40);
+        draw_list->AddText(font, font_size, ImVec2(text_pos.x - 0.6f, text_pos.y), bloom_col, label);
+        draw_list->AddText(font, font_size, ImVec2(text_pos.x + 1.2f, text_pos.y), bloom_col, label);
+    }
+
+    // Bold stroke: double-pass with slight horizontal offset
+    draw_list->AddText(font, font_size, text_pos, text_col, label);
+    draw_list->AddText(font, font_size, ImVec2(text_pos.x + 0.65f, text_pos.y), text_col, label);
+}
+
 bool RenderHardwareTextButton(const char* str_id, const char* label,
                               const ImVec2& pos, const ImVec2& size,
                               bool is_active, bool enabled) {
@@ -201,20 +225,9 @@ bool RenderHardwareTextButton(const char* str_id, const char* label,
         b_min.y + (size.y - text_size.y) * 0.5f
     );
 
-    // Subtle recessed drop shadow
-    draw_list->AddText(font, kBtnFontSize, ImVec2(text_pos.x + 1.0f, text_pos.y + 1.2f),
-                       IM_COL32(8, 10, 14, 180), label);
-
-    // Soft cyan backlight bloom for active/hovered states
-    if (enabled && (is_active || hovered || pressed)) {
-        const ImU32 bloom_col = is_active ? IM_COL32(0, 230, 255, 70) : IM_COL32(0, 220, 255, 40);
-        draw_list->AddText(font, kBtnFontSize, ImVec2(text_pos.x - 0.6f, text_pos.y), bloom_col, label);
-        draw_list->AddText(font, kBtnFontSize, ImVec2(text_pos.x + 1.2f, text_pos.y), bloom_col, label);
-    }
-
-    // Bold stroke: double-pass with slight horizontal offset
-    draw_list->AddText(font, kBtnFontSize, text_pos, text_col, label);
-    draw_list->AddText(font, kBtnFontSize, ImVec2(text_pos.x + 0.65f, text_pos.y), text_col, label);
+    DrawHardwareButtonLabel(draw_list, label, text_pos, text_col,
+                            is_active, enabled && (is_active || hovered || pressed),
+                            kBtnFontSize);
 
     return enabled && ImGui::IsItemClicked(ImGuiMouseButton_Left);
 }
