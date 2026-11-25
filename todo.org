@@ -63,6 +63,13 @@ In the settings. Half size. Full size. 125%.
 
 ** DONE Eject menu adaptation for vertical and dynamic layouts
 
+** DONE Icons on library buttons
+
+** TODO No track info in library in minimal mode
+
+** TODO Fixed size layouts
+Do not allow resizing window in Vertical and Horizontal layouts, only maximizing.
+
 ** TODO Playlist buttons
   - Add to playlist
   - Lyrics
@@ -84,11 +91,12 @@ In ~/.config/mycds/state.json
   - Author / email
 
 
-* First fully working graphical CD player
+* DONE First fully working graphical CD player
 One command line argument
 
 * CDDB cache
 A persistent local CDDB cache
+Already kinda exists, but only for images.
 
 * Music Braiz support
 https://musicbrainz.org/doc/MusicBrainz_Database/Download
