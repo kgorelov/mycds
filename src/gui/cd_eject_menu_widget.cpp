@@ -1373,16 +1373,53 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
     constexpr float kMinHorizontalSplitWidth = 680.0f;
     const bool use_vertical_layout = (avail_w < kMinHorizontalSplitWidth);
 
-    const float total_body_h = std::max(use_vertical_layout ? 210.0f : 140.0f,
-                                        ImGui::GetContentRegionAvail().y - 54.0f);
-    const float list_gap_y = ImGui::GetStyle().ItemSpacing.y;
-    const float albums_h = use_vertical_layout
-        ? std::max(100.0f, (total_body_h - list_gap_y) * 0.45f)
+    constexpr float kMinCardW = 220.0f;
+    constexpr float kCardGap = 14.0f;
+    constexpr float kGridPadX = 10.0f;
+    constexpr float kGridTopPad = 2.0f;
+
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float line_h = ImGui::GetTextLineHeight();
+    float min_album_row_h = 2.0f * style.WindowPadding.y + line_h;
+    if (is_cover_view) {
+        const float est_grid_w = std::max(
+            kMinCardW, avail_w - 2.0f * style.WindowPadding.x - 2.0f * kGridPadX);
+        const int est_cols = std::max(
+            1, static_cast<int>((est_grid_w + kCardGap) / (kMinCardW + kCardGap)));
+        const float est_card_w = std::floor(
+            (est_grid_w - static_cast<float>(est_cols - 1) * kCardGap) /
+            static_cast<float>(est_cols));
+        const float est_case_size = std::min(est_card_w, 220.0f);
+        const float est_meta_h = (line_h + 2.0f) * 3.0f + 2.0f;
+        const float est_card_h = est_case_size + 5.0f + est_meta_h;
+        min_album_row_h = 2.0f * style.WindowPadding.y + kGridTopPad + est_card_h;
+    }
+
+    const float avail_body_h = ImGui::GetContentRegionAvail().y - 54.0f;
+    const float list_gap_y = style.ItemSpacing.y;
+    constexpr float kVerticalTrackListLines = 12.0f;
+    const float vertical_tracks_h =
+        2.0f * style.WindowPadding.y + kVerticalTrackListLines * (line_h + list_gap_y);
+    const float split_albums_h = avail_body_h - list_gap_y - vertical_tracks_h;
+    const bool show_track_list = !use_vertical_layout || (split_albums_h >= min_album_row_h);
+
+    const float total_body_h = std::max(
+        (use_vertical_layout && show_track_list) ? 210.0f : 140.0f,
+        avail_body_h);
+    const float tracks_h = (use_vertical_layout && show_track_list)
+        ? vertical_tracks_h
         : total_body_h;
-    const float tracks_h = use_vertical_layout
-        ? std::max(100.0f, total_body_h - list_gap_y - albums_h)
+    const float albums_h = (use_vertical_layout && show_track_list)
+        ? std::max(min_album_row_h, total_body_h - list_gap_y - tracks_h)
         : total_body_h;
-    const float albums_w = use_vertical_layout ? 0.0f : std::max(260.0f, avail_w * 0.54f);
+    const float max_horiz_tracks_w =
+        ImGui::CalcTextSize("00. A Sensible Length Track Title Here  (00:00)").x +
+        2.0f * style.WindowPadding.x + style.ScrollbarSize;
+    const float default_horiz_albums_w = std::max(260.0f, avail_w * 0.54f);
+    const float tracks_w = use_vertical_layout
+        ? 0.0f
+        : std::min(max_horiz_tracks_w, std::max(200.0f, avail_w - item_gap_x - default_horiz_albums_w));
+    const float albums_w = use_vertical_layout ? 0.0f : (avail_w - item_gap_x - tracks_w);
 
     // Matching albums list or cover grid
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.07f, 0.08f, 0.90f));
@@ -1392,10 +1429,6 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
         if (matches.empty()) {
             ImGui::TextDisabled("No albums match your search/filter criteria.");
         } else if (is_cover_view) {
-            constexpr float kMinCardW = 220.0f;
-            constexpr float kCardGap = 14.0f;
-            constexpr float kGridPadX = 10.0f;
-            constexpr float kGridTopPad = 2.0f;
             const float avail_grid_w = std::max(kMinCardW, ImGui::GetContentRegionAvail().x - 2.0f * kGridPadX);
             const int cover_cols = std::max(
                 1,
@@ -1405,7 +1438,6 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
                 (avail_grid_w - static_cast<float>(cover_cols - 1) * kCardGap) / static_cast<float>(cover_cols)
             );
             const float case_size = std::min(card_w, 220.0f);
-            const float line_h = ImGui::GetTextLineHeight();
             const float meta_h = (line_h + 2.0f) * 3.0f + 2.0f;
             const float card_h = case_size + 5.0f + meta_h;
 
@@ -1538,59 +1570,60 @@ void RenderLibraryScreen(CdDisplayModel& model, bool just_entered) {
     }
     ImGui::EndChild();
 
-    if (!use_vertical_layout) {
-        ImGui::SameLine();
-    }
-
-    // Selected album track preview (side-by-side when wide, underneath when narrow)
     const LibraryEntry* selected_entry = (!matches.empty() && library.selected_index() < matches.size())
         ? matches[library.selected_index()]
         : nullptr;
 
-    ImGui::BeginChild("##LibTrackPreview", ImVec2(0.0f, tracks_h), true);
-    {
-        if (!selected_entry) {
-            ImGui::TextDisabled("Select an album to preview tracks.");
-        } else {
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            const ImU32 title_col = IM_COL32(0, 230, 255, 255);
-            const ImU32 sub_col = IM_COL32(204, 214, 230, 255);
-            const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
-            const float line_h = ImGui::GetTextLineHeight();
+    if (show_track_list) {
+        if (!use_vertical_layout) {
+            ImGui::SameLine();
+        }
 
-            {
-                const ImVec2 line_pos = ImGui::GetCursorScreenPos();
-                ImVec2 text_pos = line_pos;
-                DrawHighlightedText(dl, text_pos, selected_entry->album, query_lower, title_col, kMatchGreenCol);
-                ImGui::Dummy(ImVec2(std::max(1.0f, text_pos.x - line_pos.x), line_h));
-            }
-            {
-                const ImVec2 line_pos = ImGui::GetCursorScreenPos();
-                ImVec2 text_pos = line_pos;
-                DrawHighlightedText(dl, text_pos, selected_entry->artist, query_lower, sub_col, kMatchGreenCol);
-                char info_buf[96];
-                std::snprintf(info_buf, sizeof(info_buf), " (%d)  |  Added: %s",
-                              selected_entry->year, selected_entry->addedDate.c_str());
-                DrawHighlightedText(dl, text_pos, info_buf, "", sub_col, kMatchGreenCol);
-                ImGui::Dummy(ImVec2(std::max(1.0f, text_pos.x - line_pos.x), line_h));
-            }
+        // Selected album track preview (side-by-side when wide, underneath when narrow)
+        ImGui::BeginChild("##LibTrackPreview", ImVec2(tracks_w, tracks_h), true);
+        {
+            if (!selected_entry) {
+                ImGui::TextDisabled("Select an album to preview tracks.");
+            } else {
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                const ImU32 title_col = IM_COL32(0, 230, 255, 255);
+                const ImU32 sub_col = IM_COL32(204, 214, 230, 255);
+                const ImU32 text_col = ImGui::GetColorU32(ImGuiCol_Text);
 
-            ImGui::Separator();
-            ImGui::Spacing();
-            for (const auto& trk : selected_entry->tracks) {
-                const ImVec2 line_pos = ImGui::GetCursorScreenPos();
-                ImVec2 text_pos = line_pos;
-                char prefix_buf[16];
-                std::snprintf(prefix_buf, sizeof(prefix_buf), "%02d. ", trk.number);
-                const std::string dur = "  (" + FormatDurationMmSs(trk.duration_seconds) + ")";
-                DrawHighlightedText(dl, text_pos, prefix_buf, "", text_col, kMatchGreenCol);
-                DrawHighlightedText(dl, text_pos, trk.title, query_lower, text_col, kMatchGreenCol);
-                DrawHighlightedText(dl, text_pos, dur, "", text_col, kMatchGreenCol);
-                ImGui::Dummy(ImVec2(std::max(1.0f, text_pos.x - line_pos.x), line_h));
+                {
+                    const ImVec2 line_pos = ImGui::GetCursorScreenPos();
+                    ImVec2 text_pos = line_pos;
+                    DrawHighlightedText(dl, text_pos, selected_entry->album, query_lower, title_col, kMatchGreenCol);
+                    ImGui::Dummy(ImVec2(std::max(1.0f, text_pos.x - line_pos.x), line_h));
+                }
+                {
+                    const ImVec2 line_pos = ImGui::GetCursorScreenPos();
+                    ImVec2 text_pos = line_pos;
+                    DrawHighlightedText(dl, text_pos, selected_entry->artist, query_lower, sub_col, kMatchGreenCol);
+                    char info_buf[96];
+                    std::snprintf(info_buf, sizeof(info_buf), " (%d)  |  Added: %s",
+                                  selected_entry->year, selected_entry->addedDate.c_str());
+                    DrawHighlightedText(dl, text_pos, info_buf, "", sub_col, kMatchGreenCol);
+                    ImGui::Dummy(ImVec2(std::max(1.0f, text_pos.x - line_pos.x), line_h));
+                }
+
+                ImGui::Separator();
+                ImGui::Spacing();
+                for (const auto& trk : selected_entry->tracks) {
+                    const ImVec2 line_pos = ImGui::GetCursorScreenPos();
+                    ImVec2 text_pos = line_pos;
+                    char prefix_buf[16];
+                    std::snprintf(prefix_buf, sizeof(prefix_buf), "%02d. ", trk.number);
+                    const std::string dur = "  (" + FormatDurationMmSs(trk.duration_seconds) + ")";
+                    DrawHighlightedText(dl, text_pos, prefix_buf, "", text_col, kMatchGreenCol);
+                    DrawHighlightedText(dl, text_pos, trk.title, query_lower, text_col, kMatchGreenCol);
+                    DrawHighlightedText(dl, text_pos, dur, "", text_col, kMatchGreenCol);
+                    ImGui::Dummy(ImVec2(std::max(1.0f, text_pos.x - line_pos.x), line_h));
+                }
             }
         }
+        ImGui::EndChild();
     }
-    ImGui::EndChild();
     ImGui::PopStyleColor();
 
     ImGui::Spacing();
